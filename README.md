@@ -31,6 +31,13 @@ pip install -r requirements.txt
 python -m uvicorn backend.main:app --host 0.0.0.0 --port 8000
 ```
 
+**Windows (1 click):** Double-click `start_server.bat`
+
+**Xem IP cho nhân viên:**
+```bash
+python scripts/network_info.py
+```
+
 Hoặc dùng Docker:
 ```bash
 docker-compose up -d

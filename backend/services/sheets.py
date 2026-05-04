@@ -52,7 +52,14 @@ def detect_carrier(tracking_vn: str) -> tuple:
     return "Khác", t
 
 def parse_don_sheet(rows: list) -> list:
-    """Parse DON sheet into order groups. Multi-product: main row has customer, sub-rows have products."""
+    """Parse DON sheet into order groups.
+    
+    Multi-product logic:
+    - If row has Tên but no SP → Header (main row), collect following sub-rows
+    - If row has SP but no Tên → Item (sub-row), belongs to previous header
+    - If row has BOTH Tên AND SP → It's a header with its own product.
+      STILL check if next rows are sub-rows (no name, has product).
+    """
     orders = []
     i = 0
     while i < len(rows):
@@ -69,8 +76,8 @@ def parse_don_sheet(rows: list) -> list:
             i += 1
             continue
 
-        if has_name and not has_product:
-            # Main row of multi-product order
+        if has_name:
+            # Header row (with or without product) — collect sub-rows
             group = [r]
             j = i + 1
             while j < len(rows):
@@ -86,12 +93,8 @@ def parse_don_sheet(rows: list) -> list:
                     break
             orders.append(_build_order_don(group, sheet_type="DON", row_start=i + 2))
             i = j
-        elif has_name and has_product:
-            # Single order
-            orders.append(_build_order_don([r], sheet_type="DON", row_start=i + 2))
-            i += 1
         elif not has_name and has_product:
-            # Sub-row without main - treat as standalone
+            # Orphan sub-row without header — treat as standalone
             orders.append(_build_order_don([r], sheet_type="DON", row_start=i + 2))
             i += 1
         else:
@@ -99,7 +102,10 @@ def parse_don_sheet(rows: list) -> list:
     return orders
 
 def parse_don2_sheet(rows: list) -> list:
-    """Parse Don2 sheet - similar structure but different column indices."""
+    """Parse Don2 sheet - similar structure but different column indices.
+    
+    Same multi-product logic as DON: if row has name, collect following sub-rows.
+    """
     orders = []
     i = 0
     while i < len(rows):
@@ -115,7 +121,8 @@ def parse_don2_sheet(rows: list) -> list:
             i += 1
             continue
 
-        if has_name and not has_product:
+        if has_name:
+            # Header row (with or without product) — collect sub-rows
             group = [r]
             j = i + 1
             while j < len(rows):
@@ -131,9 +138,6 @@ def parse_don2_sheet(rows: list) -> list:
                     break
             orders.append(_build_order_don2(group, row_start=i + 2))
             i = j
-        elif has_name and has_product:
-            orders.append(_build_order_don2([r], row_start=i + 2))
-            i += 1
         elif not has_name and has_product:
             orders.append(_build_order_don2([r], row_start=i + 2))
             i += 1
@@ -142,110 +146,150 @@ def parse_don2_sheet(rows: list) -> list:
     return orders
 
 def _build_order_don(group: list, sheet_type: str, row_start: int) -> dict:
+    """Build order dict from group of rows. Never crashes on bad data."""
     main = group[0]
     items = []
 
-    # If main row has product, it's a single order
-    if main[6].strip():
+    def safe_str(val, idx):
+        try:
+            return val[idx].strip() if idx < len(val) and val[idx] else ""
+        except (IndexError, AttributeError):
+            return ""
+
+    def safe_money(val, idx):
+        try:
+            return parse_money(val[idx]) if idx < len(val) else 0
+        except (IndexError, AttributeError, ValueError):
+            return 0
+
+    def safe_float(val, idx):
+        try:
+            return parse_float(val[idx]) if idx < len(val) else 0.0
+        except (IndexError, AttributeError, ValueError):
+            return 0.0
+
+    # If main row has product, it's a single order (or header+product on same row)
+    product = safe_str(main, 6)
+    if product:
         items.append({
             "row_index": row_start,
-            "product_name": main[6].strip(),
-            "weight": parse_float(main[7]),
-            "volume": parse_float(main[8]),
-            "tracking_cn": main[9].strip(),
+            "product_name": product,
+            "weight": safe_float(main, 7),
+            "volume": safe_float(main, 8),
+            "tracking_cn": safe_str(main, 9),
             "tracking_cn_2": "",
-            "item_price": parse_money(main[14]) if len(group) == 1 else 0,
+            "item_price": safe_money(main, 14) if len(group) == 1 else 0,
         })
     else:
         # Multi-product: items from sub-rows
         for idx, sub in enumerate(group[1:]):
             items.append({
                 "row_index": row_start + idx + 1,
-                "product_name": sub[6].strip(),
-                "weight": parse_float(sub[7]),
-                "volume": parse_float(sub[8]),
-                "tracking_cn": sub[9].strip(),
+                "product_name": safe_str(sub, 6),
+                "weight": safe_float(sub, 7),
+                "volume": safe_float(sub, 8),
+                "tracking_cn": safe_str(sub, 9),
                 "tracking_cn_2": "",
-                "item_price": parse_money(sub[14]),
+                "item_price": safe_money(sub, 14),
             })
 
-    tracking_vn = main[10].strip()
+    tracking_vn = safe_str(main, 10)
     carrier, carrier_code = detect_carrier(tracking_vn)
 
     return {
         "sheet_type": sheet_type,
         "row_start": row_start,
         "row_end": row_start + len(group) - 1,
-        "customer_name": main[2].strip(),
-        "customer_phone": main[3].strip().replace(" ", ""),
-        "customer_address": main[4].strip(),
-        "source": main[5].strip(),
-        "tracking_cn": main[9].strip(),
+        "customer_name": safe_str(main, 2),
+        "customer_phone": safe_str(main, 3).replace(" ", ""),
+        "customer_address": safe_str(main, 4),
+        "source": safe_str(main, 5),
+        "tracking_cn": safe_str(main, 9),
         "tracking_vn": tracking_vn,
-        "account": main[11].strip(),
-        "note": main[13].strip(),
-        "total_price": parse_money(main[14]),
-        "deposit": parse_money(main[15]),
-        "remaining": parse_money(main[16]),
-        "extra_fee": parse_money(main[17]),
-        "status": main[18].strip(),
-        "loading_code": main[19].strip(),
-        "waybill_code": main[20].strip(),
-        "order_date": main[1].strip(),
+        "account": safe_str(main, 11),
+        "note": safe_str(main, 13),
+        "total_price": safe_money(main, 14),
+        "deposit": safe_money(main, 15),
+        "remaining": safe_money(main, 16),
+        "extra_fee": safe_money(main, 17),
+        "status": safe_str(main, 18),
+        "loading_code": safe_str(main, 19),
+        "waybill_code": safe_str(main, 20),
+        "order_date": safe_str(main, 1),
         "carrier": carrier,
         "carrier_code": carrier_code,
         "items": items,
     }
 
 def _build_order_don2(group: list, row_start: int) -> dict:
+    """Build order dict from Don2 group of rows. Never crashes on bad data."""
     main = group[0]
     items = []
 
-    if main[5].strip():
+    def safe_str(val, idx):
+        try:
+            return val[idx].strip() if idx < len(val) and val[idx] else ""
+        except (IndexError, AttributeError):
+            return ""
+
+    def safe_money(val, idx):
+        try:
+            return parse_money(val[idx]) if idx < len(val) else 0
+        except (IndexError, AttributeError, ValueError):
+            return 0
+
+    def safe_float(val, idx):
+        try:
+            return parse_float(val[idx]) if idx < len(val) else 0.0
+        except (IndexError, AttributeError, ValueError):
+            return 0.0
+
+    product = safe_str(main, 5)
+    if product:
         items.append({
             "row_index": row_start,
-            "product_name": main[5].strip(),
-            "weight": parse_float(main[6]),
-            "volume": parse_float(main[7]),
-            "tracking_cn": main[8].strip(),
-            "tracking_cn_2": main[9].strip(),
-            "item_price": parse_money(main[14]) if len(group) == 1 else 0,
+            "product_name": product,
+            "weight": safe_float(main, 6),
+            "volume": safe_float(main, 7),
+            "tracking_cn": safe_str(main, 8),
+            "tracking_cn_2": safe_str(main, 9),
+            "item_price": safe_money(main, 14) if len(group) == 1 else 0,
         })
     else:
         for idx, sub in enumerate(group[1:]):
             items.append({
                 "row_index": row_start + idx + 1,
-                "product_name": sub[5].strip(),
-                "weight": parse_float(sub[6]),
-                "volume": parse_float(sub[7]),
-                "tracking_cn": sub[8].strip(),
-                "tracking_cn_2": sub[9].strip(),
-                "item_price": parse_money(sub[14]),
+                "product_name": safe_str(sub, 5),
+                "weight": safe_float(sub, 6),
+                "volume": safe_float(sub, 7),
+                "tracking_cn": safe_str(sub, 8),
+                "tracking_cn_2": safe_str(sub, 9),
+                "item_price": safe_money(sub, 14),
             })
 
-    tracking_vn = main[10].strip()
+    tracking_vn = safe_str(main, 10)
     carrier, carrier_code = detect_carrier(tracking_vn)
 
     return {
         "sheet_type": "Don2",
         "row_start": row_start,
         "row_end": row_start + len(group) - 1,
-        "customer_name": main[1].strip(),
-        "customer_phone": main[2].strip().replace(" ", ""),
-        "customer_address": main[3].strip(),
-        "source": main[4].strip(),
-        "tracking_cn": main[8].strip(),
+        "customer_name": safe_str(main, 1),
+        "customer_phone": safe_str(main, 2).replace(" ", ""),
+        "customer_address": safe_str(main, 3),
+        "source": safe_str(main, 4),
+        "tracking_cn": safe_str(main, 8),
         "tracking_vn": tracking_vn,
-        "account": main[11].strip(),
-        "note": main[13].strip(),
-        "total_price": parse_money(main[14]),
-        "deposit": parse_money(main[15]),
-        "remaining": parse_money(main[16]),
-        "extra_fee": parse_money(main[17]),
-        "status": main[18].strip(),
+        "account": safe_str(main, 11),
+        "note": safe_str(main, 13),
+        "total_price": safe_money(main, 14),
+        "deposit": safe_money(main, 15),
+        "remaining": safe_money(main, 16),
+        "extra_fee": safe_money(main, 17),
+        "status": safe_str(main, 18),
         "loading_code": "",
         "waybill_code": "",
-        "order_date": main[0].strip(),
+        "order_date": safe_str(main, 0),
         "carrier": carrier,
         "carrier_code": carrier_code,
         "items": items,
