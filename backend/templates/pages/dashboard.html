@@ -3,89 +3,148 @@
 {% block page_title %}📊 Dashboard{% endblock %}
 
 {% block content %}
-<!-- Stats cards -->
-<div class="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
-    <div class="bg-white rounded-xl p-4 border border-gray-200 shadow-sm">
-        <div class="text-sm text-gray-500">Đơn DON (Tiểu ngạch)</div>
-        <div class="text-2xl font-bold text-gray-900 mt-1">{{ don_stats[0] }}</div>
-        <div class="text-xs text-gray-400 mt-1">Tổng: {{ "{:,.0f}".format(don_stats[1]) }} đ</div>
+<!-- KPI Cards -->
+<div class="grid grid-cols-2 md:grid-cols-5 gap-4 mb-6">
+    <div class="bg-white rounded-xl p-4 border border-gray-200 shadow-sm hover:shadow-md transition-shadow">
+        <div class="flex items-center gap-2">
+            <div class="w-8 h-8 bg-blue-100 rounded-lg flex items-center justify-center text-blue-600">📦</div>
+            <div class="text-xs text-gray-500">Tổng đơn</div>
+        </div>
+        <div class="text-2xl font-bold text-gray-900 mt-2" id="kpi-total">{{ don_stats[0] + don2_stats[0] }}</div>
+        <div class="text-xs text-gray-400 mt-0.5">DON: {{ don_stats[0] }} • Don2: {{ don2_stats[0] }}</div>
     </div>
-    <div class="bg-white rounded-xl p-4 border border-gray-200 shadow-sm">
-        <div class="text-sm text-gray-500">Đơn Don2 (TMDT)</div>
-        <div class="text-2xl font-bold text-gray-900 mt-1">{{ don2_stats[0] }}</div>
-        <div class="text-xs text-gray-400 mt-1">Tổng: {{ "{:,.0f}".format(don2_stats[1]) }} đ</div>
+    <div class="bg-white rounded-xl p-4 border border-gray-200 shadow-sm hover:shadow-md transition-shadow">
+        <div class="flex items-center gap-2">
+            <div class="w-8 h-8 bg-emerald-100 rounded-lg flex items-center justify-center text-emerald-600">💰</div>
+            <div class="text-xs text-gray-500">Doanh thu</div>
+        </div>
+        <div class="text-2xl font-bold text-gray-900 mt-2">{{ "{:,.0f}".format(don_stats[1] + don2_stats[1]) }}</div>
+        <div class="text-xs text-gray-400 mt-0.5">đồng</div>
     </div>
-    <div class="bg-white rounded-xl p-4 border border-gray-200 shadow-sm">
-        <div class="text-sm text-gray-500">Còn phải thu</div>
-        <div class="text-2xl font-bold text-red-600 mt-1">{{ "{:,.0f}".format(don_stats[3] + don2_stats[3]) }} đ</div>
+    <div class="bg-white rounded-xl p-4 border border-gray-200 shadow-sm hover:shadow-md transition-shadow">
+        <div class="flex items-center gap-2">
+            <div class="w-8 h-8 bg-green-100 rounded-lg flex items-center justify-center text-green-600">✅</div>
+            <div class="text-xs text-gray-500">Đã thu</div>
+        </div>
+        <div class="text-2xl font-bold text-green-600 mt-2">{{ "{:,.0f}".format(don_stats[2] + don2_stats[2]) }}</div>
+        <div class="text-xs text-gray-400 mt-0.5">đồng</div>
     </div>
-    <div class="bg-white rounded-xl p-4 border border-gray-200 shadow-sm">
-        <div class="text-sm text-gray-500">Chưa có VĐ VN</div>
-        <div class="text-2xl font-bold text-amber-600 mt-1">{{ pending_vn }}</div>
-        <div class="text-xs text-gray-400 mt-1">đơn đang chờ vận chuyển VN</div>
+    <div class="bg-white rounded-xl p-4 border border-red-200 shadow-sm hover:shadow-md transition-shadow">
+        <div class="flex items-center gap-2">
+            <div class="w-8 h-8 bg-red-100 rounded-lg flex items-center justify-center text-red-600">🔴</div>
+            <div class="text-xs text-gray-500">Còn nợ</div>
+        </div>
+        <div class="text-2xl font-bold text-red-600 mt-2">{{ "{:,.0f}".format(don_stats[3] + don2_stats[3]) }}</div>
+        <div class="text-xs text-gray-400 mt-0.5">đồng</div>
+    </div>
+    <div class="bg-white rounded-xl p-4 border border-amber-200 shadow-sm hover:shadow-md transition-shadow">
+        <div class="flex items-center gap-2">
+            <div class="w-8 h-8 bg-amber-100 rounded-lg flex items-center justify-center text-amber-600">🚚</div>
+            <div class="text-xs text-gray-500">Chờ VĐ VN</div>
+        </div>
+        <div class="text-2xl font-bold text-amber-600 mt-2">{{ pending_vn }}</div>
+        <div class="text-xs text-gray-400 mt-0.5">đơn chờ ship</div>
     </div>
 </div>
 
-<!-- Sync info -->
+<!-- Sync bar + Auto-refresh toggle -->
 <div class="bg-blue-50 border border-blue-200 rounded-lg px-4 py-2 mb-6 flex items-center justify-between text-sm">
     <span class="text-blue-700">
         📡 Lần đồng bộ cuối: <strong>{{ sync_info.last_sync[:19] if sync_info.last_sync != 'Chưa đồng bộ' else 'Chưa đồng bộ' }}</strong>
-        • {{ sync_info.order_count }} đơn • {{ sync_info.customer_count }} khách hàng
+        • {{ sync_info.order_count }} đơn • {{ sync_info.customer_count }} khách
     </span>
-    <button hx-post="/api/sync" hx-target="#sync-status-inline" hx-swap="innerHTML"
-        class="px-3 py-1 bg-blue-600 text-white rounded-lg text-xs hover:bg-blue-700">
-        Đồng bộ ngay
-    </button>
-    <span id="sync-status-inline" class="ml-2"></span>
+    <div class="flex items-center gap-3">
+        <label class="flex items-center gap-1.5 cursor-pointer">
+            <input type="checkbox" id="auto-refresh-toggle" class="w-3.5 h-3.5 rounded text-blue-600">
+            <span class="text-xs text-blue-700">Tự động mỗi 5 phút</span>
+        </label>
+        <button hx-post="/api/sync" hx-target="#sync-status-inline" hx-swap="innerHTML"
+            class="px-3 py-1 bg-blue-600 text-white rounded-lg text-xs hover:bg-blue-700">
+            Đồng bộ ngay
+        </button>
+        <span id="sync-status-inline" class="ml-2"></span>
+    </div>
 </div>
 
-<div class="grid md:grid-cols-2 gap-6">
-    <!-- Status distribution -->
+<!-- Charts Row 1: Debt + ACC -->
+<div class="grid md:grid-cols-2 gap-6 mb-6">
+    <!-- Top 10 Debt Bar Chart -->
     <div class="bg-white rounded-xl border border-gray-200 shadow-sm p-5">
-        <h3 class="font-semibold text-gray-800 mb-4">Trạng thái đơn hàng</h3>
-        {% if status_rows %}
-        <div class="space-y-2">
-            {% for row in status_rows %}
-            <div class="flex items-center justify-between py-1.5 border-b border-gray-50">
-                <span class="text-sm text-gray-700">{{ row[0] if row[0] else 'Không xác định' }}</span>
-                <div class="flex items-center gap-2">
-                    <div class="w-24 bg-gray-100 rounded-full h-2">
-                        <div class="bg-primary-500 h-2 rounded-full" style="width: {{ (row[1] / status_rows[0][1] * 100)|int }}%"></div>
-                    </div>
-                    <span class="text-sm font-medium text-gray-900 w-10 text-right">{{ row[1] }}</span>
+        <div class="flex items-center justify-between mb-4">
+            <h3 class="font-semibold text-gray-800">📊 Top 10 Khách hàng nợ nhiều nhất</h3>
+            <span class="text-xs text-gray-400" id="debt-total-label"></span>
+        </div>
+        <div class="relative" style="height: 320px;">
+            <canvas id="debtChart"></canvas>
+        </div>
+        <div id="debt-empty" class="hidden text-center py-8 text-gray-400 text-sm">
+            Không có dữ liệu công nợ
+        </div>
+    </div>
+
+    <!-- ACC Pie Chart -->
+    <div class="bg-white rounded-xl border border-gray-200 shadow-sm p-5">
+        <div class="flex items-center justify-between mb-4">
+            <h3 class="font-semibold text-gray-800">🎯 Hiệu suất ACC (số đơn)</h3>
+            <span class="text-xs text-gray-400" id="acc-total-label"></span>
+        </div>
+        <div class="flex items-center gap-6">
+            <div class="relative" style="height: 280px; width: 280px;">
+                <canvas id="accChart"></canvas>
+            </div>
+            <div id="acc-legend" class="flex-1 space-y-2"></div>
+        </div>
+        <div id="acc-empty" class="hidden text-center py-8 text-gray-400 text-sm">
+            Chưa có dữ liệu ACC
+        </div>
+    </div>
+</div>
+
+<!-- Charts Row 2: Revenue by Sheet + Shipping Alerts -->
+<div class="grid md:grid-cols-2 gap-6 mb-6">
+    <!-- Revenue by Sheet Type -->
+    <div class="bg-white rounded-xl border border-gray-200 shadow-sm p-5">
+        <h3 class="font-semibold text-gray-800 mb-4">💼 Doanh thu theo loại đơn</h3>
+        <div class="space-y-4">
+            {% for r in by_sheet %}
+            {% set pct = (r[2] / (by_sheet[0][2] + by_sheet[1][2]) * 100) if by_sheet|length > 1 and (by_sheet[0][2] + by_sheet[1][2]) > 0 else 50 %}
+            <div>
+                <div class="flex items-center justify-between mb-1">
+                    <span class="text-sm font-medium text-gray-700">
+                        <span class="px-2 py-0.5 rounded text-xs {% if r[0] == 'DON' %}bg-blue-100 text-blue-700{% else %}bg-purple-100 text-purple-700{% endif %}">{{ r[0] }}</span>
+                        {{ r[1] }} đơn
+                    </span>
+                    <span class="text-sm font-bold text-gray-900">{{ "{:,.0f}".format(r[2]) }} đ</span>
+                </div>
+                <div class="w-full bg-gray-100 rounded-full h-3">
+                    <div class="{% if r[0] == 'DON' %}bg-blue-500{% else %}bg-purple-500{% endif %} h-3 rounded-full transition-all duration-500" style="width: {{ pct|int }}%"></div>
+                </div>
+                <div class="flex justify-between mt-1 text-xs text-gray-400">
+                    <span>Đã thu: <span class="text-green-600">{{ "{:,.0f}".format(r[3]) }} đ</span></span>
+                    <span>Nợ: <span class="text-red-600">{{ "{:,.0f}".format(r[4]) }} đ</span></span>
                 </div>
             </div>
             {% endfor %}
         </div>
-        {% else %}
-        <p class="text-gray-400 text-sm">Chưa có dữ liệu trạng thái. Hãy đồng bộ Sheet.</p>
-        {% endif %}
     </div>
 
-    <!-- Top customers -->
-    <div class="bg-white rounded-xl border border-gray-200 shadow-sm p-5">
-        <h3 class="font-semibold text-gray-800 mb-4">Khách hàng nhiều đơn nhất</h3>
-        <div class="space-y-2">
-            {% for c in top_customers %}
-            <a href="/tim-kiem?q={{ c[1] }}" class="flex items-center justify-between py-1.5 border-b border-gray-50 hover:bg-gray-50 rounded px-1">
-                <div>
-                    <div class="text-sm font-medium text-gray-800">{{ c[0] }}</div>
-                    <div class="text-xs text-gray-400">{{ c[1] }}</div>
-                </div>
-                <div class="text-right">
-                    <div class="text-sm font-medium">{{ c[2] }} đơn</div>
-                    <div class="text-xs text-red-500">Nợ: {{ "{:,.0f}".format(c[4]) }} đ</div>
-                </div>
-            </a>
-            {% endfor %}
+    <!-- Shipping Alerts -->
+    <div class="bg-white rounded-xl border border-amber-200 shadow-sm p-5">
+        <div class="flex items-center justify-between mb-4">
+            <h3 class="font-semibold text-gray-800">⚠️ Cảnh báo vận chuyển</h3>
+            <span class="text-xs text-amber-600 bg-amber-50 px-2 py-1 rounded-full" id="alert-count">đang tải...</span>
+        </div>
+        <p class="text-xs text-gray-500 mb-3">Đơn có VĐ TQ quá 7 ngày nhưng chưa có VĐ VN — cần giục kho</p>
+        <div class="overflow-x-auto max-h-64 overflow-y-auto" id="shipping-alerts-table">
+            <div class="text-center py-4 text-gray-400 text-sm">Đang tải dữ liệu...</div>
         </div>
     </div>
 </div>
 
-<!-- Recent orders -->
-<div class="bg-white rounded-xl border border-gray-200 shadow-sm p-5 mt-6">
+<!-- Recent Orders -->
+<div class="bg-white rounded-xl border border-gray-200 shadow-sm p-5">
     <div class="flex items-center justify-between mb-4">
-        <h3 class="font-semibold text-gray-800">Đơn hàng gần đây</h3>
+        <h3 class="font-semibold text-gray-800">🕐 Đơn hàng gần đây</h3>
         <a href="/don-hang" class="text-sm text-primary-600 hover:underline">Xem tất cả →</a>
     </div>
     <div class="overflow-x-auto">
@@ -96,14 +155,16 @@
                     <th class="px-3 py-2 text-left text-xs font-medium text-gray-500">Khách</th>
                     <th class="px-3 py-2 text-left text-xs font-medium text-gray-500">Sản phẩm</th>
                     <th class="px-3 py-2 text-left text-xs font-medium text-gray-500">Sheet</th>
+                    <th class="px-3 py-2 text-left text-xs font-medium text-gray-500">ACC</th>
                     <th class="px-3 py-2 text-right text-xs font-medium text-gray-500">Giá</th>
                     <th class="px-3 py-2 text-left text-xs font-medium text-gray-500">VĐ TQ</th>
+                    <th class="px-3 py-2 text-left text-xs font-medium text-gray-500">VĐ VN</th>
                 </tr>
             </thead>
             <tbody class="divide-y divide-gray-100">
                 {% for o in recent %}
                 <tr class="hover:bg-gray-50 cursor-pointer" onclick="window.location='/don-hang/{{ o[0] }}'">
-                    <td class="px-3 py-2 text-gray-500">{{ o[19] or '' }}</td>
+                    <td class="px-3 py-2 text-gray-500 whitespace-nowrap">{{ o[19] or '' }}</td>
                     <td class="px-3 py-2 font-medium">{{ o[3] or '' }}</td>
                     <td class="px-3 py-2 text-gray-600 max-w-xs truncate">{{ o[6] or '' }}</td>
                     <td class="px-3 py-2">
@@ -111,12 +172,249 @@
                             {{ o[1] }}
                         </span>
                     </td>
+                    <td class="px-3 py-2 text-xs text-gray-500">{{ o[9] or '' }}</td>
                     <td class="px-3 py-2 text-right">{{ "{:,.0f}".format(o[11]) }} đ</td>
                     <td class="px-3 py-2 font-mono text-xs">{{ o[7][:15] if o[7] else '-' }}</td>
+                    <td class="px-3 py-2 font-mono text-xs">{{ o[8][:15] if o[8] else '-' }}</td>
                 </tr>
                 {% endfor %}
             </tbody>
         </table>
     </div>
 </div>
+
+<!-- Top Customers -->
+<div class="bg-white rounded-xl border border-gray-200 shadow-sm p-5 mt-6">
+    <h3 class="font-semibold text-gray-800 mb-4">👥 Top 10 khách hàng nhiều đơn nhất</h3>
+    <div class="overflow-x-auto">
+        <table class="w-full text-sm">
+            <thead class="bg-gray-50">
+                <tr>
+                    <th class="px-3 py-2 text-left text-xs font-medium text-gray-500">#</th>
+                    <th class="px-3 py-2 text-left text-xs font-medium text-gray-500">Khách hàng</th>
+                    <th class="px-3 py-2 text-left text-xs font-medium text-gray-500">SĐT</th>
+                    <th class="px-3 py-2 text-right text-xs font-medium text-gray-500">Đơn</th>
+                    <th class="px-3 py-2 text-right text-xs font-medium text-gray-500">Tổng giá</th>
+                    <th class="px-3 py-2 text-right text-xs font-medium text-gray-500">Còn nợ</th>
+                </tr>
+            </thead>
+            <tbody class="divide-y divide-gray-100">
+                {% for c in top_customers %}
+                <tr class="hover:bg-gray-50">
+                    <td class="px-3 py-2 text-gray-400">{{ loop.index }}</td>
+                    <td class="px-3 py-2 font-medium">
+                        <a href="/tim-kiem?q={{ c[0] }}" class="text-primary-600 hover:underline">{{ c[0] }}</a>
+                    </td>
+                    <td class="px-3 py-2 text-gray-500 font-mono text-xs">{{ c[1] }}</td>
+                    <td class="px-3 py-2 text-right font-medium">{{ c[2] }}</td>
+                    <td class="px-3 py-2 text-right">{{ "{:,.0f}".format(c[3]) }} đ</td>
+                    <td class="px-3 py-2 text-right {% if c[4] > 0 %}text-red-600 font-medium{% else %}text-gray-400{% endif %}">
+                        {{ "{:,.0f}".format(c[4]) }} đ
+                    </td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</div>
+
+<!-- Chart.js -->
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.7/dist/chart.umd.min.js"></script>
+<script>
+// Auto-refresh
+let refreshInterval = null;
+document.getElementById('auto-refresh-toggle').addEventListener('change', function() {
+    if (this.checked) {
+        refreshInterval = setInterval(() => {
+            window.location.reload();
+        }, 5 * 60 * 1000);
+        // Store in sessionStorage
+        sessionStorage.setItem('autoRefresh', 'true');
+    } else {
+        clearInterval(refreshInterval);
+        refreshInterval = null;
+        sessionStorage.removeItem('autoRefresh');
+    }
+});
+
+// Restore auto-refresh state
+if (sessionStorage.getItem('autoRefresh') === 'true') {
+    const toggle = document.getElementById('auto-refresh-toggle');
+    toggle.checked = true;
+    toggle.dispatchEvent(new Event('change'));
+}
+
+// Load chart data
+async function loadDashboardCharts() {
+    try {
+        const resp = await fetch('/api/dashboard-data');
+        const data = await resp.json();
+
+        // --- Debt Bar Chart ---
+        if (data.top_debt && data.top_debt.length > 0) {
+            const labels = data.top_debt.map(d => d.name.length > 12 ? d.name.substring(0, 12) + '…' : d.name);
+            const values = data.top_debt.map(d => d.debt);
+            const totalDebt = values.reduce((a, b) => a + b, 0);
+            document.getElementById('debt-total-label').textContent = `Tổng: ${totalDebt.toLocaleString('vi-VN')} đ`;
+
+            const colors = values.map((v, i) => {
+                const intensity = Math.max(0.3, 1 - (i * 0.07));
+                return `rgba(239, 68, 68, ${intensity})`;
+            });
+
+            new Chart(document.getElementById('debtChart'), {
+                type: 'bar',
+                data: {
+                    labels: labels,
+                    datasets: [{
+                        label: 'Còn nợ (đ)',
+                        data: values,
+                        backgroundColor: colors,
+                        borderColor: 'rgba(239, 68, 68, 0.8)',
+                        borderWidth: 1,
+                        borderRadius: 6,
+                    }]
+                },
+                options: {
+                    indexAxis: 'y',
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    plugins: {
+                        legend: { display: false },
+                        tooltip: {
+                            callbacks: {
+                                label: ctx => `${ctx.raw.toLocaleString('vi-VN')} đ`,
+                                afterLabel: ctx => `${data.top_debt[ctx.dataIndex].count} đơn hàng`
+                            }
+                        }
+                    },
+                    scales: {
+                        x: {
+                            ticks: {
+                                callback: v => (v / 1000000).toFixed(0) + 'M',
+                                font: { size: 11 }
+                            },
+                            grid: { color: 'rgba(0,0,0,0.05)' }
+                        },
+                        y: {
+                            ticks: { font: { size: 11 } },
+                            grid: { display: false }
+                        }
+                    }
+                }
+            });
+        } else {
+            document.getElementById('debt-empty').classList.remove('hidden');
+            document.getElementById('debtChart').parentElement.style.display = 'none';
+        }
+
+        // --- ACC Pie Chart ---
+        if (data.acc_distribution && data.acc_distribution.length > 0) {
+            const labels = data.acc_distribution.map(d => d.account);
+            const values = data.acc_distribution.map(d => d.count);
+            const total = values.reduce((a, b) => a + b, 0);
+            document.getElementById('acc-total-label').textContent = `Tổng: ${total} đơn`;
+
+            const pieColors = [
+                '#3B82F6', '#8B5CF6', '#F59E0B', '#10B981', '#EF4444',
+                '#06B6D4', '#F97316', '#EC4899', '#14B8A6', '#6366F1'
+            ];
+
+            new Chart(document.getElementById('accChart'), {
+                type: 'doughnut',
+                data: {
+                    labels: labels,
+                    datasets: [{
+                        data: values,
+                        backgroundColor: pieColors.slice(0, labels.length),
+                        borderWidth: 2,
+                        borderColor: '#fff',
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    cutout: '55%',
+                    plugins: {
+                        legend: { display: false },
+                        tooltip: {
+                            callbacks: {
+                                label: ctx => {
+                                    const pct = ((ctx.raw / total) * 100).toFixed(1);
+                                    return `${ctx.label}: ${ctx.raw} đơn (${pct}%)`;
+                                }
+                            }
+                        }
+                    }
+                }
+            });
+
+            // Custom legend
+            const legendEl = document.getElementById('acc-legend');
+            let legendHtml = '';
+            data.acc_distribution.forEach((d, i) => {
+                const pct = ((d.count / total) * 100).toFixed(1);
+                legendHtml += `
+                    <div class="flex items-center gap-2 py-1.5 px-2 rounded hover:bg-gray-50">
+                        <div class="w-3 h-3 rounded-full flex-shrink-0" style="background:${pieColors[i]}"></div>
+                        <div class="flex-1 min-w-0">
+                            <div class="text-sm font-medium text-gray-800 truncate">${d.account}</div>
+                            <div class="text-xs text-gray-400">${d.count} đơn (${pct}%)</div>
+                        </div>
+                    </div>`;
+            });
+            legendEl.innerHTML = legendHtml;
+        } else {
+            document.getElementById('acc-empty').classList.remove('hidden');
+            document.getElementById('accChart').parentElement.style.display = 'none';
+        }
+
+        // --- Shipping Alerts Table ---
+        const alertCountEl = document.getElementById('alert-count');
+        const alertsTableEl = document.getElementById('shipping-alerts-table');
+
+        if (data.shipping_alerts && data.shipping_alerts.length > 0) {
+            alertCountEl.textContent = `${data.shipping_alerts.length} đơn cần giục`;
+            let tableHtml = `
+                <table class="w-full text-xs">
+                    <thead class="bg-amber-50 sticky top-0">
+                        <tr>
+                            <th class="px-2 py-2 text-left text-amber-700">Khách</th>
+                            <th class="px-2 py-2 text-left text-amber-700">VĐ TQ</th>
+                            <th class="px-2 py-2 text-left text-amber-700">Sản phẩm</th>
+                            <th class="px-2 py-2 text-left text-amber-700">Ngày</th>
+                            <th class="px-2 py-2 text-left text-amber-700">Sheet</th>
+                        </tr>
+                    </thead>
+                    <tbody class="divide-y divide-amber-100">`;
+
+            data.shipping_alerts.forEach(a => {
+                tableHtml += `
+                    <tr class="hover:bg-amber-50 cursor-pointer" onclick="window.location='/don-hang/${a.id}'">
+                        <td class="px-2 py-1.5 font-medium text-gray-800">${a.name || 'N/A'}</td>
+                        <td class="px-2 py-1.5 font-mono text-gray-600">${a.tracking_cn || '-'}</td>
+                        <td class="px-2 py-1.5 text-gray-500 max-w-[120px] truncate">${a.products || '-'}</td>
+                        <td class="px-2 py-1.5 text-gray-500">${a.date || '-'}</td>
+                        <td class="px-2 py-1.5">
+                            <span class="px-1.5 py-0.5 rounded text-[10px] ${a.sheet === 'DON' ? 'bg-blue-100 text-blue-700' : 'bg-purple-100 text-purple-700'}">${a.sheet}</span>
+                        </td>
+                    </tr>`;
+            });
+
+            tableHtml += '</tbody></table>';
+            alertsTableEl.innerHTML = tableHtml;
+        } else {
+            alertCountEl.textContent = '0 đơn';
+            alertCountEl.classList.remove('text-amber-600', 'bg-amber-50');
+            alertCountEl.classList.add('text-green-600', 'bg-green-50');
+            alertsTableEl.innerHTML = '<div class="text-center py-4 text-green-500 text-sm">✅ Không có đơn nào cần giục kho</div>';
+        }
+
+    } catch (err) {
+        console.error('Dashboard chart error:', err);
+    }
+}
+
+document.addEventListener('DOMContentLoaded', loadDashboardCharts);
+</script>
 {% endblock %}

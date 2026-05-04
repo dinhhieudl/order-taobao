@@ -1,6 +1,6 @@
-"""API endpoints for HTMX interactions and data operations."""
+"""API endpoints for HTMX interactions, data operations, charts, and exports."""
 from fastapi import APIRouter, Request, Query, Form, UploadFile, File
-from fastapi.responses import HTMLResponse, JSONResponse
+from fastapi.responses import HTMLResponse, JSONResponse, StreamingResponse
 from ..services.cache import sync_all, get_sync_info, calc_shipping
 from ..services.sheets import append_order_to_sheet, parse_money
 from ..services.tracking import parse_tracking_info
@@ -9,7 +9,8 @@ from ..config import DON_RATE_PER_KG, DON_RATE_PER_M3, DON2_RATE_PER_KG, CREDENT
 import json
 import os
 import shutil
-from datetime import datetime
+import io
+from datetime import datetime, timedelta
 
 router = APIRouter(tags=["api"])
 
@@ -81,6 +82,75 @@ async def search_customer(q: str = Query("", alias="q")):
         """)
     finally:
         await db.close()
+
+
+@router.get("/customer-history")
+async def customer_history(phone: str = Query("", alias="phone")):
+    """Get recent orders for a customer phone - Smart Form feature."""
+    if not phone or len(phone) < 3:
+        return HTMLResponse("")
+
+    db = await get_db()
+    try:
+        q_clean = phone.replace(" ", "")
+        orders = await db.execute_fetchall(
+            """SELECT o.id, o.order_date, o.customer_name, o.sheet_type,
+                o.total_price, o.deposit, o.remaining, o.status,
+                o.tracking_cn, o.tracking_vn,
+                GROUP_CONCAT(oi.product_name, ' | ') as products
+            FROM orders o
+            LEFT JOIN order_items oi ON oi.order_id = o.id
+            WHERE o.customer_phone LIKE ?
+            GROUP BY o.id
+            ORDER BY o.row_start DESC
+            LIMIT 3""",
+            (f"%{q_clean}%",)
+        )
+
+        if not orders:
+            return HTMLResponse("")
+
+        rows = ""
+        for o in orders:
+            status_badge = ""
+            if o[7]:
+                color = "green" if "hoàn" in (o[7] or "").lower() or "xong" in (o[7] or "").lower() else "blue"
+                status_badge = f'<span class="px-1.5 py-0.5 rounded text-[10px] bg-{color}-100 text-{color}-700">{o[7]}</span>'
+
+            rows += f"""
+            <tr class="border-b border-gray-100 last:border-0">
+                <td class="px-2 py-1.5 text-xs text-gray-500">{o[1] or ''}</td>
+                <td class="px-2 py-1.5">
+                    <a href="/don-hang/{o[0]}" class="text-xs text-primary-600 hover:underline">{o[10][:20] if o[10] else o[8][:15] if o[8] else '-'}</a>
+                </td>
+                <td class="px-2 py-1.5 text-xs max-w-[120px] truncate">{o[11] or ''}</td>
+                <td class="px-2 py-1.5 text-xs text-right font-medium">{o[4]:,.0f} đ</td>
+                <td class="px-2 py-1.5">{status_badge}</td>
+            </tr>"""
+
+        return HTMLResponse(f"""
+        <div class="mt-2 bg-amber-50 border border-amber-200 rounded-lg p-3">
+            <div class="flex items-center gap-2 mb-2">
+                <span class="text-amber-700 text-xs font-medium">📋 3 đơn gần nhất của {orders[0][2]}</span>
+                <span class="text-[10px] text-amber-500">({len(orders)} đơn)</span>
+            </div>
+            <table class="w-full">
+                <thead>
+                    <tr class="text-[10px] text-amber-600 uppercase">
+                        <th class="px-2 py-1 text-left">Ngày</th>
+                        <th class="px-2 py-1 text-left">Mã</th>
+                        <th class="px-2 py-1 text-left">SP</th>
+                        <th class="px-2 py-1 text-right">Giá</th>
+                        <th class="px-2 py-1 text-left">TT</th>
+                    </tr>
+                </thead>
+                <tbody>{rows}</tbody>
+            </table>
+        </div>
+        """)
+    finally:
+        await db.close()
+
 
 @router.get("/search-tracking")
 async def search_tracking(q: str = Query("", alias="q")):
@@ -181,13 +251,7 @@ async def create_order(
     total_price: int = Form(0),
     deposit: int = Form(0),
 ):
-    """Create new order and write to Google Sheets.
-    
-    Note: 'remaining' is NOT written to the sheet because the sheet has its own
-    formula (remaining = price - payment). When customer pays more, the sheet
-    auto-updates the remaining column.
-    """
-    # Normalize tracking CN: uppercase, remove spaces
+    """Create new order and write to Google Sheets."""
     tracking_cn_clean = tracking_cn.strip().upper().replace(" ", "").replace("\t", "")
 
     order_data = {
@@ -205,7 +269,7 @@ async def create_order(
         "note": note,
         "total_price": total_price,
         "deposit": deposit,
-        "remaining": 0,  # Not written to sheet - formula handles it
+        "remaining": 0,
         "status": "",
     }
 
@@ -294,6 +358,183 @@ async def debt_summary(q: str = Query("", alias="q")):
         await db.close()
 
 
+# ==================== NEW API ENDPOINTS ====================
+
+@router.get("/dashboard-data")
+async def dashboard_data():
+    """JSON data for dashboard charts."""
+    db = await get_db()
+    try:
+        # Top 10 debt customers
+        top_debt = await db.execute_fetchall(
+            """SELECT customer_name, customer_phone,
+                COALESCE(SUM(remaining),0) as debt,
+                COUNT(*) as order_count
+            FROM orders
+            WHERE customer_name != '' AND remaining > 0
+            GROUP BY customer_phone
+            ORDER BY debt DESC
+            LIMIT 10"""
+        )
+
+        # ACC distribution (order count)
+        acc_dist = await db.execute_fetchall(
+            """SELECT account, COUNT(*) as cnt
+            FROM orders WHERE account != ''
+            GROUP BY account ORDER BY cnt DESC"""
+        )
+
+        # Shipping alerts: TQ tracking > 7 days, no VN tracking
+        seven_days_ago = (datetime.now() - timedelta(days=7)).strftime("%Y-%m-%d")
+        shipping_alerts = await db.execute_fetchall(
+            """SELECT o.id, o.customer_name, o.customer_phone, o.tracking_cn,
+                o.order_date, o.sheet_type, o.last_sync,
+                GROUP_CONCAT(oi.product_name, ' | ') as products
+            FROM orders o
+            LEFT JOIN order_items oi ON oi.order_id = o.id
+            WHERE o.tracking_cn != '' AND o.tracking_cn IS NOT NULL
+                AND (o.tracking_vn IS NULL OR o.tracking_vn = '')
+                AND o.last_sync < ?
+            GROUP BY o.id
+            ORDER BY o.last_sync ASC
+            LIMIT 50""",
+            (seven_days_ago,)
+        )
+
+        # Overall stats
+        stats = await db.execute_fetchall(
+            """SELECT
+                COUNT(*) as total_orders,
+                COALESCE(SUM(total_price),0) as total_revenue,
+                COALESCE(SUM(deposit),0) as total_collected,
+                COALESCE(SUM(remaining),0) as total_debt,
+                COUNT(CASE WHEN tracking_cn != '' AND (tracking_vn IS NULL OR tracking_vn = '') THEN 1 END) as pending_vn
+            FROM orders"""
+        )
+
+        return JSONResponse({
+            "top_debt": [{"name": r[0], "phone": r[1], "debt": r[2], "count": r[3]} for r in top_debt],
+            "acc_distribution": [{"account": r[0], "count": r[1]} for r in acc_dist],
+            "shipping_alerts": [
+                {"id": r[0], "name": r[1], "phone": r[2], "tracking_cn": r[3],
+                 "date": r[4], "sheet": r[5], "synced": r[6], "products": r[7]}
+                for r in shipping_alerts
+            ],
+            "stats": {
+                "total_orders": stats[0][0] if stats else 0,
+                "total_revenue": stats[0][1] if stats else 0,
+                "total_collected": stats[0][2] if stats else 0,
+                "total_debt": stats[0][3] if stats else 0,
+                "pending_vn": stats[0][4] if stats else 0,
+            }
+        })
+    finally:
+        await db.close()
+
+
+@router.get("/export-orders")
+async def export_orders(
+    sheet: str = Query("", alias="sheet"),
+    status: str = Query("", alias="status"),
+    account: str = Query("", alias="account"),
+    date_from: str = Query("", alias="date_from"),
+    date_to: str = Query("", alias="date_to"),
+):
+    """Export filtered orders to Excel."""
+    from openpyxl import Workbook
+    from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
+
+    db = await get_db()
+    try:
+        where_clauses = []
+        params = []
+        if sheet:
+            where_clauses.append("o.sheet_type = ?")
+            params.append(sheet)
+        if status:
+            where_clauses.append("o.status = ?")
+            params.append(status)
+        if account:
+            where_clauses.append("o.account = ?")
+            params.append(account)
+
+        where = "WHERE " + " AND ".join(where_clauses) if where_clauses else ""
+
+        rows = await db.execute_fetchall(
+            f"""SELECT o.order_date, o.customer_name, o.customer_phone, o.customer_address,
+                o.sheet_type, o.tracking_cn, o.tracking_vn, o.account,
+                o.total_price, o.deposit, o.remaining, o.status, o.note,
+                GROUP_CONCAT(oi.product_name, ' | ') as products,
+                GROUP_CONCAT(oi.weight, ' | ') as weights,
+                GROUP_CONCAT(oi.volume, ' | ') as volumes
+            FROM orders o
+            LEFT JOIN order_items oi ON oi.order_id = o.id
+            {where}
+            GROUP BY o.id
+            ORDER BY o.row_start DESC""",
+            params
+        )
+
+        wb = Workbook()
+        ws = wb.active
+        ws.title = "Đơn hàng"
+
+        # Header style
+        header_font = Font(bold=True, color="FFFFFF", size=11)
+        header_fill = PatternFill(start_color="2563EB", end_color="2563EB", fill_type="solid")
+        thin_border = Border(
+            left=Side(style='thin'), right=Side(style='thin'),
+            top=Side(style='thin'), bottom=Side(style='thin')
+        )
+
+        headers = ["Ngày", "Khách hàng", "SĐT", "Địa chỉ", "Sheet", "Sản phẩm",
+                    "VĐ TQ", "VĐ VN", "ACC", "Tổng giá", "Cọc", "Còn lại", "Trạng thái", "Ghi chú"]
+
+        for col, header in enumerate(headers, 1):
+            cell = ws.cell(row=1, column=col, value=header)
+            cell.font = header_font
+            cell.fill = header_fill
+            cell.alignment = Alignment(horizontal='center')
+            cell.border = thin_border
+
+        for row_idx, r in enumerate(rows, 2):
+            values = [r[0], r[1], r[2], r[3], r[4], r[13], r[5], r[6], r[7],
+                     r[8], r[9], r[10], r[11], r[12]]
+            for col, val in enumerate(values, 1):
+                cell = ws.cell(row=row_idx, column=col, value=val)
+                cell.border = thin_border
+                if col in (10, 11, 12) and val:
+                    cell.number_format = '#,##0'
+
+        # Auto-width
+        for col in ws.columns:
+            max_len = max(len(str(cell.value or "")) for cell in col)
+            ws.column_dimensions[col[0].column_letter].width = min(max_len + 4, 40)
+
+        # Summary row
+        summary_row = len(rows) + 3
+        ws.cell(row=summary_row, column=1, value="TỔNG CỘNG").font = Font(bold=True)
+        ws.cell(row=summary_row, column=10, value=sum(r[8] or 0 for r in rows)).font = Font(bold=True)
+        ws.cell(row=summary_row, column=10).number_format = '#,##0'
+        ws.cell(row=summary_row, column=11, value=sum(r[9] or 0 for r in rows)).font = Font(bold=True)
+        ws.cell(row=summary_row, column=11).number_format = '#,##0'
+        ws.cell(row=summary_row, column=12, value=sum(r[10] or 0 for r in rows)).font = Font(bold=True)
+        ws.cell(row=summary_row, column=12).number_format = '#,##0'
+
+        output = io.BytesIO()
+        wb.save(output)
+        output.seek(0)
+
+        filename = f"don-hang_{datetime.now().strftime('%Y%m%d_%H%M%S')}.xlsx"
+        return StreamingResponse(
+            output,
+            media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            headers={"Content-Disposition": f"attachment; filename={filename}"}
+        )
+    finally:
+        await db.close()
+
+
 @router.post("/upload-credentials")
 async def upload_credentials(file: UploadFile = File(...)):
     """Upload Google Service Account JSON credentials."""
@@ -305,7 +546,6 @@ async def upload_credentials(file: UploadFile = File(...)):
         """, status_code=400)
 
     try:
-        # Validate JSON content
         content = await file.read()
         data = json.loads(content)
 
@@ -316,12 +556,10 @@ async def upload_credentials(file: UploadFile = File(...)):
             </div>
             """, status_code=400)
 
-        # Save to credentials directory
         dest = CREDENTIALS_DIR / file.filename
         with open(dest, "wb") as f:
             f.write(content)
 
-        # Update .env with new creds file path
         env_path = BASE_DIR / ".env"
         _update_env_var(env_path, "GOOGLE_CREDS_FILE", str(dest))
 

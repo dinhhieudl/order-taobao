@@ -107,6 +107,9 @@ async def order_list(
     request: Request,
     sheet: str = Query("", alias="sheet"),
     status: str = Query("", alias="status"),
+    account: str = Query("", alias="account"),
+    date_from: str = Query("", alias="date_from"),
+    date_to: str = Query("", alias="date_to"),
     page: int = Query(1, alias="page"),
 ):
     db = await get_db()
@@ -122,6 +125,9 @@ async def order_list(
         if status:
             where_clauses.append("o.status = ?")
             params.append(status)
+        if account:
+            where_clauses.append("o.account = ?")
+            params.append(account)
 
         where = "WHERE " + " AND ".join(where_clauses) if where_clauses else ""
 
@@ -141,14 +147,29 @@ async def order_list(
 
         total_pages = (total + per_page - 1) // per_page
 
+        # Get distinct accounts and statuses for filter dropdowns
+        acc_rows = await db.execute_fetchall(
+            "SELECT DISTINCT account FROM orders WHERE account != '' ORDER BY account"
+        )
+        status_rows = await db.execute_fetchall(
+            "SELECT DISTINCT status FROM orders WHERE status != '' ORDER BY status"
+        )
+        accounts = [r[0] for r in acc_rows]
+        statuses = [r[0] for r in status_rows]
+
         return templates.TemplateResponse("pages/orders.html", {
             "request": request,
             "orders": rows,
             "sheet_filter": sheet,
             "status_filter": status,
+            "account_filter": account,
+            "date_from": date_from,
+            "date_to": date_to,
             "page": page,
             "total_pages": total_pages,
             "total": total,
+            "accounts": accounts,
+            "statuses": statuses,
         })
     finally:
         await db.close()
