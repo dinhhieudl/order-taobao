@@ -1,0 +1,95 @@
+{% extends "base.html" %}
+{% block title %}Đơn hàng - Quản lý Vận đơn{% endblock %}
+{% block page_title %}📋 Danh sách đơn hàng{% endblock %}
+
+{% block content %}
+<!-- Filters -->
+<div class="bg-white rounded-xl border border-gray-200 shadow-sm p-4 mb-4">
+    <form method="get" class="flex flex-wrap gap-3 items-center">
+        <select name="sheet" class="px-3 py-2 border border-gray-300 rounded-lg text-sm">
+            <option value="">Tất cả</option>
+            <option value="DON" {% if sheet_filter == 'DON' %}selected{% endif %}>DON (Tiểu ngạch)</option>
+            <option value="Don2" {% if sheet_filter == 'Don2' %}selected{% endif %}>Don2 (TMDT)</option>
+        </select>
+        <input type="text" name="status" value="{{ status_filter }}" placeholder="Lọc theo trạng thái..."
+            class="px-3 py-2 border border-gray-300 rounded-lg text-sm w-48">
+        <button type="submit" class="px-4 py-2 bg-primary-600 text-white rounded-lg text-sm hover:bg-primary-700">Lọc</button>
+        <span class="text-sm text-gray-400 ml-auto">{{ total }} đơn</span>
+    </form>
+</div>
+
+<!-- Orders table -->
+<div class="bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden">
+    <div class="overflow-x-auto">
+        <table class="w-full text-sm">
+            <thead class="bg-gray-50 border-b">
+                <tr>
+                    <th class="px-3 py-3 text-left text-xs font-medium text-gray-500">Ngày</th>
+                    <th class="px-3 py-3 text-left text-xs font-medium text-gray-500">Khách hàng</th>
+                    <th class="px-3 py-3 text-left text-xs font-medium text-gray-500">Sản phẩm</th>
+                    <th class="px-3 py-3 text-left text-xs font-medium text-gray-500">Sheet</th>
+                    <th class="px-3 py-3 text-left text-xs font-medium text-gray-500">VĐ TQ</th>
+                    <th class="px-3 py-3 text-left text-xs font-medium text-gray-500">VĐ VN</th>
+                    <th class="px-3 py-3 text-right text-xs font-medium text-gray-500">Giá</th>
+                    <th class="px-3 py-3 text-left text-xs font-medium text-gray-500">Trạng thái</th>
+                </tr>
+            </thead>
+            <tbody class="divide-y divide-gray-100">
+                {% for o in orders %}
+                <tr class="hover:bg-gray-50 cursor-pointer {% if o[14] %}bg-blue-50{% endif %}"
+                    onclick="window.location='/don-hang/{{ o[0] }}'">
+                    <td class="px-3 py-2.5 text-gray-500 whitespace-nowrap">{{ o[19] or '' }}</td>
+                    <td class="px-3 py-2.5">
+                        <div class="font-medium text-gray-900">{{ o[3] or '' }}</div>
+                        <div class="text-xs text-gray-400">{{ o[4] or '' }}</div>
+                    </td>
+                    <td class="px-3 py-2.5 text-gray-600 max-w-xs truncate">{{ o[22] or '' }}</td>
+                    <td class="px-3 py-2.5">
+                        <span class="px-2 py-0.5 rounded text-xs font-medium {% if o[1] == 'DON' %}bg-blue-100 text-blue-700{% else %}bg-purple-100 text-purple-700{% endif %}">
+                            {{ o[1] }}
+                        </span>
+                    </td>
+                    <td class="px-3 py-2.5 font-mono text-xs">{{ o[7][:15] if o[7] else '-' }}</td>
+                    <td class="px-3 py-2.5 font-mono text-xs">{{ o[8][:15] if o[8] else '-' }}</td>
+                    <td class="px-3 py-2.5 text-right font-medium">{{ "{:,.0f}".format(o[11]) }} đ</td>
+                    <td class="px-3 py-2.5">
+                        {% if o[14] %}
+                        <span class="px-2 py-0.5 rounded text-xs bg-green-100 text-green-700">{{ o[14] }}</span>
+                        {% else %}
+                        <span class="text-xs text-gray-300">-</span>
+                        {% endif %}
+                    </td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+
+    <!-- Pagination -->
+    {% if total_pages > 1 %}
+    <div class="px-4 py-3 border-t bg-gray-50 flex items-center justify-between">
+        <span class="text-sm text-gray-500">Trang {{ page }} / {{ total_pages }}</span>
+        <div class="flex gap-1">
+            {% if page > 1 %}
+            <a href="?sheet={{ sheet_filter }}&status={{ status_filter }}&page={{ page - 1 }}"
+                class="px-3 py-1 border rounded text-sm hover:bg-gray-100">←</a>
+            {% endif %}
+            {% for p in range(1, total_pages + 1) %}
+                {% if p == page %}
+                <span class="px-3 py-1 bg-primary-600 text-white rounded text-sm">{{ p }}</span>
+                {% elif (p - page)|abs <= 2 or p == 1 or p == total_pages %}
+                <a href="?sheet={{ sheet_filter }}&status={{ status_filter }}&page={{ p }}"
+                    class="px-3 py-1 border rounded text-sm hover:bg-gray-100">{{ p }}</a>
+                {% elif (p - page)|abs == 3 %}
+                <span class="px-1 py-1 text-gray-400">...</span>
+                {% endif %}
+            {% endfor %}
+            {% if page < total_pages %}
+            <a href="?sheet={{ sheet_filter }}&status={{ status_filter }}&page={{ page + 1 }}"
+                class="px-3 py-1 border rounded text-sm hover:bg-gray-100">→</a>
+            {% endif %}
+        </div>
+    </div>
+    {% endif %}
+</div>
+{% endblock %}

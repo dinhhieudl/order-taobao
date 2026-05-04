@@ -1,0 +1,285 @@
+"""API endpoints for HTMX interactions and data operations."""
+from fastapi import APIRouter, Request, Query, Form
+from fastapi.responses import HTMLResponse, JSONResponse
+from ..services.cache import sync_all, get_sync_info, calc_shipping
+from ..services.sheets import append_order_to_sheet, parse_money
+from ..services.tracking import parse_tracking_info
+from ..models.database import get_db
+from ..config import DON_RATE_PER_KG, DON_RATE_PER_M3, DON2_RATE_PER_KG
+import json
+from datetime import datetime
+
+router = APIRouter(tags=["api"])
+
+@router.post("/sync")
+async def sync_data():
+    """Sync from Google Sheets to local cache."""
+    try:
+        count = await sync_all()
+        info = await get_sync_info()
+        return HTMLResponse(f"""
+        <div class="flex items-center gap-2 text-green-600">
+            <svg class="w-5 h-5" fill="currentColor" viewBox="0 0 20 20">
+                <path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clip-rule="evenodd"/>
+            </svg>
+            <span>Đã đồng bộ {count} đơn hàng • {info['customer_count']} khách hàng</span>
+        </div>
+        """)
+    except Exception as e:
+        return HTMLResponse(f"""
+        <div class="flex items-center gap-2 text-red-600">
+            <svg class="w-5 h-5" fill="currentColor" viewBox="0 0 20 20">
+                <path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM8.707 7.293a1 1 0 00-1.414 1.414L8.586 10l-1.293 1.293a1 1 0 101.414 1.414L10 11.414l1.293 1.293a1 1 0 001.414-1.414L11.414 10l1.293-1.293a1 1 0 00-1.414-1.414L10 8.586 8.707 7.293z" clip-rule="evenodd"/>
+            </svg>
+            <span>Lỗi: {str(e)}</span>
+        </div>
+        """, status_code=500)
+
+@router.get("/search-customer")
+async def search_customer(q: str = Query("", alias="q")):
+    """Quick customer search for form auto-fill."""
+    if not q or len(q) < 2:
+        return HTMLResponse("")
+
+    db = await get_db()
+    try:
+        q_clean = q.replace(" ", "")
+        results = await db.execute_fetchall(
+            """SELECT customer_name, customer_phone, customer_address,
+                COUNT(*) as order_count
+            FROM orders
+            WHERE customer_phone LIKE ? OR customer_name LIKE ?
+            GROUP BY customer_phone
+            ORDER BY order_count DESC
+            LIMIT 10""",
+            (f"%{q_clean}%", f"%{q}%")
+        )
+
+        if not results:
+            return HTMLResponse("")
+
+        items = ""
+        for r in results:
+            items += f"""
+            <div class="px-3 py-2 hover:bg-blue-50 cursor-pointer flex justify-between items-center"
+                 hx-on:click="fillCustomer('{r[0]}', '{r[1]}', '{r[2]}')"
+                 hx-on:mouseenter="this.classList.add('bg-blue-50')"
+                 hx-on:mouseleave="this.classList.remove('bg-blue-50')">
+                <div>
+                    <div class="font-medium text-gray-900">{r[0]}</div>
+                    <div class="text-sm text-gray-500">{r[1]} • {r[3]} đơn</div>
+                </div>
+                <div class="text-xs text-gray-400">{r[2][:30] if r[2] else ''}</div>
+            </div>"""
+
+        return HTMLResponse(f"""
+        <div class="absolute z-50 w-full bg-white border border-gray-200 rounded-lg shadow-lg mt-1 max-h-60 overflow-y-auto">
+            {items}
+        </div>
+        """)
+    finally:
+        await db.close()
+
+@router.get("/search-tracking")
+async def search_tracking(q: str = Query("", alias="q")):
+    """Search by tracking number."""
+    if not q or len(q) < 3:
+        return HTMLResponse("")
+
+    db = await get_db()
+    try:
+        results = await db.execute_fetchall(
+            """SELECT o.id, o.customer_name, o.customer_phone, o.tracking_cn, o.tracking_vn,
+                o.status, o.sheet_type, GROUP_CONCAT(oi.product_name, ' | ') as products
+            FROM orders o
+            LEFT JOIN order_items oi ON oi.order_id = o.id
+            WHERE o.tracking_cn LIKE ? OR o.tracking_vn LIKE ?
+            GROUP BY o.id LIMIT 20""",
+            (f"%{q}%", f"%{q}%")
+        )
+
+        if not results:
+            return HTMLResponse('<div class="p-3 text-gray-500 text-sm">Không tìm thấy</div>')
+
+        items = ""
+        for r in results:
+            status_color = "green" if r[5] else "gray"
+            items += f"""
+            <a href="/don-hang/{r[0]}" class="block px-3 py-2 hover:bg-blue-50 border-b border-gray-100">
+                <div class="flex justify-between">
+                    <span class="font-medium">{r[1] or 'N/A'}</span>
+                    <span class="text-xs px-2 py-0.5 rounded bg-{status_color}-100 text-{status_color}-700">{r[6]}</span>
+                </div>
+                <div class="text-sm text-gray-500">TQ: {r[3] or '-'} → VN: {r[4] or '-'}</div>
+                <div class="text-xs text-gray-400">{r[7] or ''}</div>
+            </a>"""
+
+        return HTMLResponse(f"""
+        <div class="absolute z-50 w-full bg-white border border-gray-200 rounded-lg shadow-lg mt-1 max-h-80 overflow-y-auto">
+            {items}
+        </div>
+        """)
+    finally:
+        await db.close()
+
+@router.get("/order-items/{order_id}")
+async def get_order_items(order_id: int):
+    """Get order items for detail view."""
+    db = await get_db()
+    try:
+        items = await db.execute_fetchall(
+            "SELECT * FROM order_items WHERE order_id = ?", (order_id,)
+        )
+        if not items:
+            return HTMLResponse('<div class="text-gray-400 text-sm">Không có sản phẩm</div>')
+
+        rows = ""
+        for item in items:
+            rows += f"""
+            <tr class="border-b">
+                <td class="px-3 py-2">{item[3] or ''}</td>
+                <td class="px-3 py-2 text-right">{item[4]:.1f} kg</td>
+                <td class="px-3 py-2 text-right">{item[5]:.2f} m³</td>
+                <td class="px-3 py-2 font-mono text-sm">{item[6] or ''}</td>
+                <td class="px-3 py-2 text-right">{item[8]:,.0f} đ</td>
+            </tr>"""
+
+        return HTMLResponse(f"""
+        <table class="w-full text-sm">
+            <thead class="bg-gray-50">
+                <tr>
+                    <th class="px-3 py-2 text-left">Sản phẩm</th>
+                    <th class="px-3 py-2 text-right">Khối lượng</th>
+                    <th class="px-3 py-2 text-right">Thể tích</th>
+                    <th class="px-3 py-2 text-left">Vận đơn TQ</th>
+                    <th class="px-3 py-2 text-right">Giá</th>
+                </tr>
+            </thead>
+            <tbody>{rows}</tbody>
+        </table>
+        """)
+    finally:
+        await db.close()
+
+@router.post("/create-order")
+async def create_order(
+    sheet_type: str = Form(...),
+    order_date: str = Form(""),
+    customer_name: str = Form(...),
+    customer_phone: str = Form(""),
+    customer_address: str = Form(""),
+    source: str = Form(""),
+    product_name: str = Form(""),
+    weight: float = Form(0),
+    volume: float = Form(0),
+    tracking_cn: str = Form(""),
+    tracking_vn: str = Form(""),
+    account: str = Form(""),
+    note: str = Form(""),
+    total_price: int = Form(0),
+    deposit: int = Form(0),
+):
+    """Create new order and write to Google Sheets."""
+    remaining = total_price - deposit
+
+    order_data = {
+        "order_date": order_date or datetime.now().strftime("%d/%m"),
+        "customer_name": customer_name,
+        "customer_phone": customer_phone.replace(" ", ""),
+        "customer_address": customer_address,
+        "source": source,
+        "product_name": product_name,
+        "weight": weight,
+        "volume": volume,
+        "tracking_cn": tracking_cn.replace(" ", ""),
+        "tracking_vn": tracking_vn,
+        "account": account,
+        "note": note,
+        "total_price": total_price,
+        "deposit": deposit,
+        "remaining": remaining,
+        "status": "",
+    }
+
+    try:
+        append_order_to_sheet(sheet_type, order_data)
+        return HTMLResponse(f"""
+        <div class="bg-green-50 border border-green-200 rounded-lg p-4">
+            <div class="flex items-center gap-2 text-green-700 font-medium">
+                <svg class="w-5 h-5" fill="currentColor" viewBox="0 0 20 20">
+                    <path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clip-rule="evenodd"/>
+                </svg>
+                Tạo đơn thành công!
+            </div>
+            <div class="text-sm text-green-600 mt-1">
+                Đã ghi vào sheet {sheet_type} • {customer_name} • {total_price:,.0f} đ
+            </div>
+        </div>
+        """)
+    except Exception as e:
+        return HTMLResponse(f"""
+        <div class="bg-red-50 border border-red-200 rounded-lg p-4 text-red-700">
+            Lỗi: {str(e)}
+        </div>
+        """, status_code=500)
+
+@router.get("/calc-shipping")
+async def calc_shipping_api(
+    sheet: str = Query("DON", alias="sheet"),
+    weight: float = Query(0, alias="weight"),
+    volume: float = Query(0, alias="volume"),
+):
+    """Calculate shipping cost."""
+    cost = calc_shipping(sheet, weight, volume)
+    if sheet == "DON":
+        formula = f"max({weight:.1f} × {DON_RATE_PER_KG:,}, {volume:.2f} × {DON_RATE_PER_M3:,})"
+    else:
+        formula = f"{weight:.1f} × {DON2_RATE_PER_KG:,}"
+
+    return HTMLResponse(f"""
+    <span class="text-sm font-medium text-blue-700">{cost:,.0f} đ</span>
+    <span class="text-xs text-gray-500 ml-1">({formula})</span>
+    """)
+
+@router.get("/debt-summary")
+async def debt_summary(q: str = Query("", alias="q")):
+    """Debt summary for HTMX."""
+    db = await get_db()
+    try:
+        like = f"%{q}%" if q else "%"
+        debts = await db.execute_fetchall(
+            """SELECT customer_name, customer_phone,
+                COUNT(*) as order_count,
+                COALESCE(SUM(total_price),0) as tp,
+                COALESCE(SUM(deposit),0) as td,
+                COALESCE(SUM(remaining),0) as tr
+            FROM orders
+            WHERE customer_name != '' AND remaining > 0
+                AND (customer_name LIKE ? OR customer_phone LIKE ?)
+            GROUP BY customer_phone
+            ORDER BY tr DESC LIMIT 50""",
+            (like, like)
+        )
+
+        rows = ""
+        for d in debts:
+            pct = (d[4] / d[3] * 100) if d[3] > 0 else 0
+            bar_color = "red" if pct < 50 else "yellow" if pct < 80 else "green"
+            rows += f"""
+            <tr class="border-b hover:bg-gray-50">
+                <td class="px-3 py-2 font-medium">{d[0]}</td>
+                <td class="px-3 py-2 text-sm">{d[1]}</td>
+                <td class="px-3 py-2 text-center">{d[2]}</td>
+                <td class="px-3 py-2 text-right">{d[3]:,.0f} đ</td>
+                <td class="px-3 py-2 text-right">{d[4]:,.0f} đ</td>
+                <td class="px-3 py-2 text-right font-medium text-red-600">{d[5]:,.0f} đ</td>
+                <td class="px-3 py-2">
+                    <div class="w-full bg-gray-200 rounded-full h-2">
+                        <div class="bg-{bar_color}-500 h-2 rounded-full" style="width:{pct:.0f}%"></div>
+                    </div>
+                </td>
+            </tr>"""
+
+        return HTMLResponse(rows)
+    finally:
+        await db.close()

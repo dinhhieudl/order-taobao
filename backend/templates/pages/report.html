@@ -1,0 +1,116 @@
+{% extends "base.html" %}
+{% block title %}Báo cáo - Quản lý Vận đơn{% endblock %}
+{% block page_title %}📈 Báo cáo{% endblock %}
+
+{% block content %}
+<!-- By Sheet Type -->
+<div class="grid md:grid-cols-2 gap-6 mb-6">
+    <div class="bg-white rounded-xl border border-gray-200 shadow-sm p-5">
+        <h3 class="font-semibold text-gray-800 mb-4">📊 Theo loại đơn</h3>
+        <table class="w-full text-sm">
+            <thead class="bg-gray-50">
+                <tr>
+                    <th class="px-3 py-2 text-left">Sheet</th>
+                    <th class="px-3 py-2 text-right">Đơn</th>
+                    <th class="px-3 py-2 text-right">Doanh thu</th>
+                    <th class="px-3 py-2 text-right">Đã thu</th>
+                    <th class="px-3 py-2 text-right">Còn nợ</th>
+                </tr>
+            </thead>
+            <tbody class="divide-y">
+                {% for r in by_sheet %}
+                <tr>
+                    <td class="px-3 py-2 font-medium">
+                        <span class="px-2 py-0.5 rounded text-xs {% if r[0] == 'DON' %}bg-blue-100 text-blue-700{% else %}bg-purple-100 text-purple-700{% endif %}">
+                            {{ r[0] }}
+                        </span>
+                    </td>
+                    <td class="px-3 py-2 text-right">{{ r[1] }}</td>
+                    <td class="px-3 py-2 text-right font-medium">{{ "{:,.0f}".format(r[2]) }} đ</td>
+                    <td class="px-3 py-2 text-right text-green-600">{{ "{:,.0f}".format(r[3]) }} đ</td>
+                    <td class="px-3 py-2 text-right text-red-600">{{ "{:,.0f}".format(r[4]) }} đ</td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+
+    <!-- Shipping cost -->
+    <div class="bg-white rounded-xl border border-gray-200 shadow-sm p-5">
+        <h3 class="font-semibold text-gray-800 mb-4">🚚 Phí vận chuyển ước tính</h3>
+        <div class="space-y-4">
+            <div class="p-3 bg-blue-50 rounded-lg">
+                <div class="text-sm text-blue-700 font-medium">DON (Tiểu ngạch)</div>
+                <div class="text-lg font-bold text-blue-900">{{ "{:,.0f}".format(shipping_don[1]) }} đ</div>
+                <div class="text-xs text-blue-500">{{ shipping_don[0] }} sản phẩm • max(kg×14,000, m³×2,100,000)</div>
+            </div>
+            <div class="p-3 bg-purple-50 rounded-lg">
+                <div class="text-sm text-purple-700 font-medium">Don2 (TMDT)</div>
+                <div class="text-lg font-bold text-purple-900">{{ "{:,.0f}".format(shipping_don2[1]) }} đ</div>
+                <div class="text-xs text-purple-500">{{ shipping_don2[0] }} sản phẩm • kg×28,000</div>
+            </div>
+            <div class="p-3 bg-gray-100 rounded-lg">
+                <div class="text-sm text-gray-700 font-medium">Tổng phí ship</div>
+                <div class="text-xl font-bold text-gray-900">{{ "{:,.0f}".format(shipping_don[1] + shipping_don2[1]) }} đ</div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- By Account -->
+<div class="bg-white rounded-xl border border-gray-200 shadow-sm p-5 mb-6">
+    <h3 class="font-semibold text-gray-800 mb-4">👤 Hiệu suất theo ACC</h3>
+    <div class="overflow-x-auto">
+        <table class="w-full text-sm">
+            <thead class="bg-gray-50">
+                <tr>
+                    <th class="px-3 py-2 text-left">ACC</th>
+                    <th class="px-3 py-2 text-right">Đơn</th>
+                    <th class="px-3 py-2 text-right">Doanh thu</th>
+                    <th class="px-3 py-2 text-right">Đã thu</th>
+                    <th class="px-3 py-2 text-right">Còn nợ</th>
+                    <th class="px-3 py-2 text-right">TB/đơn</th>
+                </tr>
+            </thead>
+            <tbody class="divide-y">
+                {% for r in by_acc %}
+                {% set avg = r[2] / r[1] if r[1] > 0 else 0 %}
+                <tr class="hover:bg-gray-50">
+                    <td class="px-3 py-2 font-medium">{{ r[0] }}</td>
+                    <td class="px-3 py-2 text-right">{{ r[1] }}</td>
+                    <td class="px-3 py-2 text-right font-medium">{{ "{:,.0f}".format(r[2]) }} đ</td>
+                    <td class="px-3 py-2 text-right text-green-600">{{ "{:,.0f}".format(r[3]) }} đ</td>
+                    <td class="px-3 py-2 text-right text-red-600">{{ "{:,.0f}".format(r[4]) }} đ</td>
+                    <td class="px-3 py-2 text-right text-gray-500">{{ "{:,.0f}".format(avg|int) }} đ</td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</div>
+
+<!-- By Date -->
+<div class="bg-white rounded-xl border border-gray-200 shadow-sm p-5">
+    <h3 class="font-semibold text-gray-800 mb-4">📅 Doanh thu theo ngày</h3>
+    <div class="overflow-x-auto">
+        <table class="w-full text-sm">
+            <thead class="bg-gray-50">
+                <tr>
+                    <th class="px-3 py-2 text-left">Ngày</th>
+                    <th class="px-3 py-2 text-right">Đơn</th>
+                    <th class="px-3 py-2 text-right">Doanh thu</th>
+                </tr>
+            </thead>
+            <tbody class="divide-y">
+                {% for r in by_date %}
+                <tr class="hover:bg-gray-50">
+                    <td class="px-3 py-2 font-medium">{{ r[0] }}</td>
+                    <td class="px-3 py-2 text-right">{{ r[1] }}</td>
+                    <td class="px-3 py-2 text-right font-medium">{{ "{:,.0f}".format(r[2]) }} đ</td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</div>
+{% endblock %}

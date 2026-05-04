@@ -1,0 +1,122 @@
+{% extends "base.html" %}
+{% block title %}Dashboard - Quản lý Vận đơn{% endblock %}
+{% block page_title %}📊 Dashboard{% endblock %}
+
+{% block content %}
+<!-- Stats cards -->
+<div class="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
+    <div class="bg-white rounded-xl p-4 border border-gray-200 shadow-sm">
+        <div class="text-sm text-gray-500">Đơn DON (Tiểu ngạch)</div>
+        <div class="text-2xl font-bold text-gray-900 mt-1">{{ don_stats[0] }}</div>
+        <div class="text-xs text-gray-400 mt-1">Tổng: {{ "{:,.0f}".format(don_stats[1]) }} đ</div>
+    </div>
+    <div class="bg-white rounded-xl p-4 border border-gray-200 shadow-sm">
+        <div class="text-sm text-gray-500">Đơn Don2 (TMDT)</div>
+        <div class="text-2xl font-bold text-gray-900 mt-1">{{ don2_stats[0] }}</div>
+        <div class="text-xs text-gray-400 mt-1">Tổng: {{ "{:,.0f}".format(don2_stats[1]) }} đ</div>
+    </div>
+    <div class="bg-white rounded-xl p-4 border border-gray-200 shadow-sm">
+        <div class="text-sm text-gray-500">Còn phải thu</div>
+        <div class="text-2xl font-bold text-red-600 mt-1">{{ "{:,.0f}".format(don_stats[3] + don2_stats[3]) }} đ</div>
+    </div>
+    <div class="bg-white rounded-xl p-4 border border-gray-200 shadow-sm">
+        <div class="text-sm text-gray-500">Chưa có VĐ VN</div>
+        <div class="text-2xl font-bold text-amber-600 mt-1">{{ pending_vn }}</div>
+        <div class="text-xs text-gray-400 mt-1">đơn đang chờ vận chuyển VN</div>
+    </div>
+</div>
+
+<!-- Sync info -->
+<div class="bg-blue-50 border border-blue-200 rounded-lg px-4 py-2 mb-6 flex items-center justify-between text-sm">
+    <span class="text-blue-700">
+        📡 Lần đồng bộ cuối: <strong>{{ sync_info.last_sync[:19] if sync_info.last_sync != 'Chưa đồng bộ' else 'Chưa đồng bộ' }}</strong>
+        • {{ sync_info.order_count }} đơn • {{ sync_info.customer_count }} khách hàng
+    </span>
+    <button hx-post="/api/sync" hx-target="#sync-status-inline" hx-swap="innerHTML"
+        class="px-3 py-1 bg-blue-600 text-white rounded-lg text-xs hover:bg-blue-700">
+        Đồng bộ ngay
+    </button>
+    <span id="sync-status-inline" class="ml-2"></span>
+</div>
+
+<div class="grid md:grid-cols-2 gap-6">
+    <!-- Status distribution -->
+    <div class="bg-white rounded-xl border border-gray-200 shadow-sm p-5">
+        <h3 class="font-semibold text-gray-800 mb-4">Trạng thái đơn hàng</h3>
+        {% if status_rows %}
+        <div class="space-y-2">
+            {% for row in status_rows %}
+            <div class="flex items-center justify-between py-1.5 border-b border-gray-50">
+                <span class="text-sm text-gray-700">{{ row[0] if row[0] else 'Không xác định' }}</span>
+                <div class="flex items-center gap-2">
+                    <div class="w-24 bg-gray-100 rounded-full h-2">
+                        <div class="bg-primary-500 h-2 rounded-full" style="width: {{ (row[1] / status_rows[0][1] * 100)|int }}%"></div>
+                    </div>
+                    <span class="text-sm font-medium text-gray-900 w-10 text-right">{{ row[1] }}</span>
+                </div>
+            </div>
+            {% endfor %}
+        </div>
+        {% else %}
+        <p class="text-gray-400 text-sm">Chưa có dữ liệu trạng thái. Hãy đồng bộ Sheet.</p>
+        {% endif %}
+    </div>
+
+    <!-- Top customers -->
+    <div class="bg-white rounded-xl border border-gray-200 shadow-sm p-5">
+        <h3 class="font-semibold text-gray-800 mb-4">Khách hàng nhiều đơn nhất</h3>
+        <div class="space-y-2">
+            {% for c in top_customers %}
+            <a href="/tim-kiem?q={{ c[1] }}" class="flex items-center justify-between py-1.5 border-b border-gray-50 hover:bg-gray-50 rounded px-1">
+                <div>
+                    <div class="text-sm font-medium text-gray-800">{{ c[0] }}</div>
+                    <div class="text-xs text-gray-400">{{ c[1] }}</div>
+                </div>
+                <div class="text-right">
+                    <div class="text-sm font-medium">{{ c[2] }} đơn</div>
+                    <div class="text-xs text-red-500">Nợ: {{ "{:,.0f}".format(c[4]) }} đ</div>
+                </div>
+            </a>
+            {% endfor %}
+        </div>
+    </div>
+</div>
+
+<!-- Recent orders -->
+<div class="bg-white rounded-xl border border-gray-200 shadow-sm p-5 mt-6">
+    <div class="flex items-center justify-between mb-4">
+        <h3 class="font-semibold text-gray-800">Đơn hàng gần đây</h3>
+        <a href="/don-hang" class="text-sm text-primary-600 hover:underline">Xem tất cả →</a>
+    </div>
+    <div class="overflow-x-auto">
+        <table class="w-full text-sm">
+            <thead class="bg-gray-50">
+                <tr>
+                    <th class="px-3 py-2 text-left text-xs font-medium text-gray-500">Ngày</th>
+                    <th class="px-3 py-2 text-left text-xs font-medium text-gray-500">Khách</th>
+                    <th class="px-3 py-2 text-left text-xs font-medium text-gray-500">Sản phẩm</th>
+                    <th class="px-3 py-2 text-left text-xs font-medium text-gray-500">Sheet</th>
+                    <th class="px-3 py-2 text-right text-xs font-medium text-gray-500">Giá</th>
+                    <th class="px-3 py-2 text-left text-xs font-medium text-gray-500">VĐ TQ</th>
+                </tr>
+            </thead>
+            <tbody class="divide-y divide-gray-100">
+                {% for o in recent %}
+                <tr class="hover:bg-gray-50 cursor-pointer" onclick="window.location='/don-hang/{{ o[0] }}'">
+                    <td class="px-3 py-2 text-gray-500">{{ o[19] or '' }}</td>
+                    <td class="px-3 py-2 font-medium">{{ o[3] or '' }}</td>
+                    <td class="px-3 py-2 text-gray-600 max-w-xs truncate">{{ o[6] or '' }}</td>
+                    <td class="px-3 py-2">
+                        <span class="px-2 py-0.5 rounded text-xs {% if o[1] == 'DON' %}bg-blue-100 text-blue-700{% else %}bg-purple-100 text-purple-700{% endif %}">
+                            {{ o[1] }}
+                        </span>
+                    </td>
+                    <td class="px-3 py-2 text-right">{{ "{:,.0f}".format(o[11]) }} đ</td>
+                    <td class="px-3 py-2 font-mono text-xs">{{ o[7][:15] if o[7] else '-' }}</td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</div>
+{% endblock %}

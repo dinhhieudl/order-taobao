@@ -1,0 +1,141 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{% block title %}Quản lý Vận đơn{% endblock %}</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://unpkg.com/htmx.org@1.9.12"></script>
+    <style>
+        [x-cloak] { display: none !important; }
+        .htmx-indicator { display: none; }
+        .htmx-request .htmx-indicator { display: inline-block; }
+        .htmx-request.htmx-indicator { display: inline-block; }
+    </style>
+    <script>
+        tailwind.config = {
+            theme: {
+                extend: {
+                    colors: {
+                        primary: { 50:'#eff6ff',100:'#dbeafe',200:'#bfdbfe',300:'#93c5fd',400:'#60a5fa',500:'#3b82f6',600:'#2563eb',700:'#1d4ed8',800:'#1e40af',900:'#1e3a8a' }
+                    }
+                }
+            }
+        }
+    </script>
+</head>
+<body class="bg-gray-50 min-h-screen">
+    <!-- Sidebar -->
+    <div class="flex">
+        <aside class="fixed inset-y-0 left-0 w-64 bg-white border-r border-gray-200 z-30 transform -translate-x-full lg:translate-x-0 transition-transform" id="sidebar">
+            <div class="flex items-center gap-3 px-6 py-4 border-b">
+                <div class="w-8 h-8 bg-primary-600 rounded-lg flex items-center justify-center text-white font-bold">📦</div>
+                <span class="font-bold text-gray-800">Vận đơn Taobao</span>
+            </div>
+            <nav class="p-4 space-y-1">
+                <a href="/" class="flex items-center gap-3 px-3 py-2.5 rounded-lg text-gray-700 hover:bg-primary-50 hover:text-primary-700 transition-colors {% if request.url.path == '/' %}bg-primary-50 text-primary-700 font-medium{% endif %}">
+                    <span class="text-lg">📊</span> Dashboard
+                </a>
+                <a href="/tim-kiem" class="flex items-center gap-3 px-3 py-2.5 rounded-lg text-gray-700 hover:bg-primary-50 hover:text-primary-700 transition-colors {% if request.url.path == '/tim-kiem' %}bg-primary-50 text-primary-700 font-medium{% endif %}">
+                    <span class="text-lg">🔍</span> Tìm kiếm
+                </a>
+                <a href="/don-hang" class="flex items-center gap-3 px-3 py-2.5 rounded-lg text-gray-700 hover:bg-primary-50 hover:text-primary-700 transition-colors {% if request.url.path == '/don-hang' %}bg-primary-50 text-primary-700 font-medium{% endif %}">
+                    <span class="text-lg">📋</span> Đơn hàng
+                </a>
+                <a href="/tao-don" class="flex items-center gap-3 px-3 py-2.5 rounded-lg text-gray-700 hover:bg-primary-50 hover:text-primary-700 transition-colors {% if request.url.path == '/tao-don' %}bg-primary-50 text-primary-700 font-medium{% endif %}">
+                    <span class="text-lg">➕</span> Tạo đơn
+                </a>
+                <hr class="my-3">
+                <a href="/cong-no" class="flex items-center gap-3 px-3 py-2.5 rounded-lg text-gray-700 hover:bg-primary-50 hover:text-primary-700 transition-colors {% if request.url.path == '/cong-no' %}bg-primary-50 text-primary-700 font-medium{% endif %}">
+                    <span class="text-lg">💰</span> Công nợ
+                </a>
+                <a href="/bao-cao" class="flex items-center gap-3 px-3 py-2.5 rounded-lg text-gray-700 hover:bg-primary-50 hover:text-primary-700 transition-colors {% if request.url.path == '/bao-cao' %}bg-primary-50 text-primary-700 font-medium{% endif %}">
+                    <span class="text-lg">📈</span> Báo cáo
+                </a>
+                <hr class="my-3">
+                <button hx-post="/api/sync" hx-target="#sync-status" hx-swap="innerHTML"
+                    class="w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-gray-700 hover:bg-green-50 hover:text-green-700 transition-colors">
+                    <span class="text-lg">🔄</span> Đồng bộ Sheet
+                    <span class="htmx-indicator ml-auto">
+                        <svg class="animate-spin h-4 w-4 text-green-500" fill="none" viewBox="0 0 24 24">
+                            <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+                            <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"></path>
+                        </svg>
+                    </span>
+                </button>
+            </nav>
+            <div id="sync-status" class="px-6 py-3 text-xs text-gray-400"></div>
+        </aside>
+
+        <!-- Main content -->
+        <main class="flex-1 lg:ml-64">
+            <!-- Top bar -->
+            <div class="sticky top-0 z-20 bg-white border-b border-gray-200 px-4 py-3 flex items-center justify-between">
+                <button onclick="document.getElementById('sidebar').classList.toggle('-translate-x-full')" class="lg:hidden p-2 rounded-lg hover:bg-gray-100">
+                    <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 12h16M4 18h16"/></svg>
+                </button>
+                <h1 class="text-lg font-semibold text-gray-800">{% block page_title %}{% endblock %}</h1>
+                <div class="flex items-center gap-3">
+                    <div class="relative">
+                        <input type="text" placeholder="Tìm SĐT, tên, vận đơn..."
+                            class="w-48 md:w-64 pl-9 pr-3 py-2 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-primary-500"
+                            hx-get="/api/search-tracking"
+                            hx-trigger="input changed delay:300ms, search"
+                            hx-target="#global-search-results"
+                            hx-indicator="#search-spinner"
+                            name="q"
+                            onkeydown="if(event.key==='Enter'){window.location='/tim-kiem?q='+this.value}">
+                        <svg class="absolute left-2.5 top-2.5 w-4 h-4 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"/>
+                        </svg>
+                        <span id="search-spinner" class="htmx-indicator absolute right-2.5 top-2.5">
+                            <svg class="animate-spin h-4 w-4 text-gray-400" fill="none" viewBox="0 0 24 24">
+                                <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+                                <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"></path>
+                            </svg>
+                        </span>
+                        <div id="global-search-results"></div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Page content -->
+            <div class="p-4 md:p-6">
+                {% block content %}{% endblock %}
+            </div>
+        </main>
+    </div>
+
+    <script>
+        function formatMoney(input) {
+            let v = input.value.replace(/[^\d]/g, '');
+            if (v) {
+                input.value = parseInt(v).toLocaleString('vi-VN');
+            }
+        }
+
+        function parseMoney(str) {
+            return parseInt(str.replace(/[^\d]/g, '')) || 0;
+        }
+
+        function fillCustomer(name, phone, address) {
+            const nameEl = document.getElementById('customer_name');
+            const phoneEl = document.getElementById('customer_phone');
+            const addrEl = document.getElementById('customer_address');
+            if (nameEl) nameEl.value = name;
+            if (phoneEl) phoneEl.value = phone;
+            if (addrEl) addrEl.value = address;
+            // Hide dropdown
+            document.getElementById('customer-dropdown')?.remove();
+        }
+
+        function updateRemaining() {
+            const price = parseMoney(document.getElementById('total_price')?.value || '0');
+            const deposit = parseMoney(document.getElementById('deposit')?.value || '0');
+            const remaining = price - deposit;
+            const el = document.getElementById('remaining');
+            if (el) el.value = remaining.toLocaleString('vi-VN');
+        }
+    </script>
+</body>
+</html>

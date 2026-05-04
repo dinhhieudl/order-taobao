@@ -1,0 +1,14 @@
+services:
+  app:
+    build: .
+    ports:
+      - "8000:8000"
+    volumes:
+      - ./data:/app/data
+      - ./credentials.json:/app/credentials.json:ro
+    environment:
+      - GOOGLE_CREDS_FILE=/app/credentials.json
+      - SPREADSHEET_ID=1mFlnUi2HNMFCxxTXAzBc2IMwn32v2qq6IhCCPi5eM1w
+      - HOST=0.0.0.0
+      - PORT=8000
+    restart: unless-stopped

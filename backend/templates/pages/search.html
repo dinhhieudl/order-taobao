@@ -1,0 +1,74 @@
+{% extends "base.html" %}
+{% block title %}Tìm kiếm - Quản lý Vận đơn{% endblock %}
+{% block page_title %}🔍 Tìm kiếm{% endblock %}
+
+{% block content %}
+<div class="max-w-2xl mx-auto mb-6">
+    <form method="get" class="flex gap-2">
+        <input type="text" name="q" value="{{ query }}" placeholder="Nhập SĐT, tên khách hàng, hoặc mã vận đơn..."
+            class="flex-1 px-4 py-3 border border-gray-300 rounded-xl text-lg focus:ring-2 focus:ring-primary-500 focus:border-primary-500"
+            autofocus>
+        <button type="submit" class="px-6 py-3 bg-primary-600 text-white rounded-xl hover:bg-primary-700 font-medium">
+            Tìm
+        </button>
+    </form>
+</div>
+
+{% if query %}
+<div class="bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden">
+    <div class="px-5 py-3 border-b bg-gray-50 flex items-center justify-between">
+        <span class="text-sm text-gray-600">Kết quả cho "<strong>{{ query }}</strong>"</span>
+        <span class="text-xs text-gray-400">{{ results|length }} đơn hàng</span>
+    </div>
+
+    {% if results %}
+    <div class="divide-y divide-gray-100">
+        {% for o in results %}
+        <a href="/don-hang/{{ o[0] }}" class="block px-5 py-3 hover:bg-blue-50 transition-colors">
+            <div class="flex items-start justify-between">
+                <div class="flex-1">
+                    <div class="flex items-center gap-2 mb-1">
+                        <span class="font-semibold text-gray-900">{{ o[3] or 'N/A' }}</span>
+                        <span class="text-sm text-gray-500">{{ o[4] or '' }}</span>
+                        <span class="px-2 py-0.5 rounded text-xs {% if o[1] == 'DON' %}bg-blue-100 text-blue-700{% else %}bg-purple-100 text-purple-700{% endif %}">
+                            {{ o[1] }}
+                        </span>
+                        {% if o[14] %}
+                        <span class="px-2 py-0.5 rounded text-xs bg-gray-100 text-gray-600">{{ o[14] }}</span>
+                        {% endif %}
+                    </div>
+                    <div class="text-sm text-gray-600 mb-1">📦 {{ o[22] or '' }}</div>
+                    <div class="flex gap-4 text-xs text-gray-400">
+                        <span>TQ: <span class="font-mono">{{ o[7] or '-' }}</span></span>
+                        <span>VN: <span class="font-mono">{{ o[8] or '-' }}</span></span>
+                        <span>{{ o[19] or '' }}</span>
+                    </div>
+                </div>
+                <div class="text-right ml-4">
+                    <div class="text-lg font-semibold text-gray-900">{{ "{:,.0f}".format(o[11]) }} đ</div>
+                    {% if o[13] > 0 %}
+                    <div class="text-sm text-red-500">Nợ: {{ "{:,.0f}".format(o[13]) }} đ</div>
+                    {% endif %}
+                    {% if o[12] > 0 %}
+                    <div class="text-xs text-gray-400">Cọc: {{ "{:,.0f}".format(o[12]) }} đ</div>
+                    {% endif %}
+                </div>
+            </div>
+        </a>
+        {% endfor %}
+    </div>
+    {% else %}
+    <div class="p-8 text-center text-gray-400">
+        <div class="text-4xl mb-2">🔍</div>
+        <p>Không tìm thấy đơn hàng nào phù hợp</p>
+    </div>
+    {% endif %}
+</div>
+{% else %}
+<div class="text-center py-12 text-gray-400">
+    <div class="text-6xl mb-4">🔍</div>
+    <p class="text-lg">Nhập SĐT, tên khách hàng, hoặc mã vận đơn để tìm kiếm</p>
+    <p class="text-sm mt-2">Hỗ trợ tìm theo: số điện thoại, tên, mã vận đơn TQ, mã vận đơn VN</p>
+</div>
+{% endif %}
+{% endblock %}

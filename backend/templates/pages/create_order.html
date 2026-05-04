@@ -1,0 +1,212 @@
+{% extends "base.html" %}
+{% block title %}Tạo đơn mới - Quản lý Vận đơn{% endblock %}
+{% block page_title %}➕ Tạo đơn mới{% endblock %}
+
+{% block content %}
+<div class="max-w-2xl mx-auto">
+    <form id="order-form" hx-post="/api/create-order" hx-target="#form-result" hx-swap="innerHTML"
+        class="bg-white rounded-xl border border-gray-200 shadow-sm p-6 space-y-5">
+
+        <!-- Sheet type -->
+        <div>
+            <label class="block text-sm font-medium text-gray-700 mb-1">Loại đơn</label>
+            <div class="flex gap-3">
+                <label class="flex-1 flex items-center gap-2 p-3 border-2 border-primary-500 rounded-lg bg-primary-50 cursor-pointer">
+                    <input type="radio" name="sheet_type" value="DON" checked class="text-primary-600">
+                    <div>
+                        <div class="font-medium text-primary-700">DON</div>
+                        <div class="text-xs text-primary-500">Tiểu ngạch</div>
+                    </div>
+                </label>
+                <label class="flex-1 flex items-center gap-2 p-3 border-2 border-gray-200 rounded-lg hover:border-purple-300 cursor-pointer">
+                    <input type="radio" name="sheet_type" value="Don2" class="text-purple-600">
+                    <div>
+                        <div class="font-medium text-gray-700">Don2</div>
+                        <div class="text-xs text-gray-500">TMDT</div>
+                    </div>
+                </label>
+            </div>
+        </div>
+
+        <!-- Date -->
+        <div>
+            <label class="block text-sm font-medium text-gray-700 mb-1">Ngày (dd/mm)</label>
+            <input type="text" name="order_date" id="order_date"
+                class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500"
+                placeholder="04/05" value="">
+        </div>
+
+        <!-- Customer info with auto-fill -->
+        <div class="relative">
+            <label class="block text-sm font-medium text-gray-700 mb-1">SĐT khách hàng</label>
+            <input type="text" name="customer_phone" id="customer_phone"
+                class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500"
+                placeholder="0938786505"
+                hx-get="/api/search-customer"
+                hx-trigger="input changed delay:300ms"
+                hx-target="#customer-dropdown"
+                hx-swap="innerHTML"
+                hx-indicator="#cust-spinner"
+                oninput="this.value=this.value.replace(/\s/g,'')">
+            <span id="cust-spinner" class="htmx-indicator absolute right-3 top-8">
+                <svg class="animate-spin h-4 w-4 text-gray-400" fill="none" viewBox="0 0 24 24">
+                    <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+                    <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"></path>
+                </svg>
+            </span>
+            <div id="customer-dropdown"></div>
+        </div>
+
+        <div>
+            <label class="block text-sm font-medium text-gray-700 mb-1">Tên khách hàng</label>
+            <input type="text" name="customer_name" id="customer_name"
+                class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500"
+                placeholder="Long Đoàn">
+        </div>
+
+        <div>
+            <label class="block text-sm font-medium text-gray-700 mb-1">Địa chỉ</label>
+            <textarea name="customer_address" id="customer_address" rows="2"
+                class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500"
+                placeholder="Địa chỉ giao hàng"></textarea>
+        </div>
+
+        <!-- Product -->
+        <div class="border-t pt-4">
+            <h4 class="font-medium text-gray-800 mb-3">📦 Sản phẩm</h4>
+            <div class="grid grid-cols-2 gap-3">
+                <div class="col-span-2">
+                    <label class="block text-xs text-gray-500 mb-1">Tên sản phẩm</label>
+                    <input type="text" name="product_name"
+                        class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500"
+                        placeholder="bồn cầu DIIIB">
+                </div>
+                <div>
+                    <label class="block text-xs text-gray-500 mb-1">Khối lượng (kg)</label>
+                    <input type="number" step="0.1" name="weight" id="weight"
+                        class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500"
+                        placeholder="12.5" oninput="calcShip()">
+                </div>
+                <div>
+                    <label class="block text-xs text-gray-500 mb-1">Thể tích (m³)</label>
+                    <input type="number" step="0.01" name="volume" id="volume"
+                        class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500"
+                        placeholder="0.3" oninput="calcShip()">
+                </div>
+                <div>
+                    <label class="block text-xs text-gray-500 mb-1">Vận đơn TQ</label>
+                    <input type="text" name="tracking_cn"
+                        class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 font-mono"
+                        placeholder="800060572993"
+                        oninput="this.value=this.value.replace(/\s/g,'')">
+                </div>
+                <div>
+                    <label class="block text-xs text-gray-500 mb-1">Vận đơn VN</label>
+                    <input type="text" name="tracking_vn"
+                        class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 font-mono"
+                        placeholder="VTP: 109764457793">
+                </div>
+            </div>
+            <div class="mt-2 text-sm" id="ship-calc"></div>
+        </div>
+
+        <!-- Payment -->
+        <div class="border-t pt-4">
+            <h4 class="font-medium text-gray-800 mb-3">💰 Thanh toán</h4>
+            <div class="grid grid-cols-3 gap-3">
+                <div>
+                    <label class="block text-xs text-gray-500 mb-1">Tổng giá (đ)</label>
+                    <input type="text" name="total_price" id="total_price"
+                        class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500"
+                        placeholder="10,000,000"
+                        oninput="formatMoney(this); updateRemaining()">
+                </div>
+                <div>
+                    <label class="block text-xs text-gray-500 mb-1">Tiền cọc (đ)</label>
+                    <input type="text" name="deposit" id="deposit"
+                        class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500"
+                        placeholder="5,000,000"
+                        oninput="formatMoney(this); updateRemaining()">
+                </div>
+                <div>
+                    <label class="block text-xs text-gray-500 mb-1">Còn lại (đ)</label>
+                    <input type="text" name="remaining_display" id="remaining"
+                        class="w-full px-3 py-2 border border-gray-200 rounded-lg bg-gray-50" readonly>
+                </div>
+            </div>
+        </div>
+
+        <!-- Other -->
+        <div class="grid grid-cols-2 gap-3">
+            <div>
+                <label class="block text-xs text-gray-500 mb-1">Nguồn</label>
+                <select name="source" class="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm">
+                    <option value="">-- Chọn --</option>
+                    <option value="zalo phụ">Zalo phụ</option>
+                    <option value="zalo chính">Zalo chính</option>
+                    <option value="page fb">Page FB</option>
+                    <option value="website">Website</option>
+                    <option value="voz">Voz</option>
+                </select>
+            </div>
+            <div>
+                <label class="block text-xs text-gray-500 mb-1">ACC</label>
+                <select name="account" class="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm">
+                    <option value="">-- Chọn --</option>
+                    <option value="Acc 1">Acc 1</option>
+                    <option value="Acc 2">Acc 2</option>
+                    <option value="Con cá">Con cá</option>
+                    <option value="Acc Thảo">Acc Thảo</option>
+                </select>
+            </div>
+        </div>
+
+        <div>
+            <label class="block text-xs text-gray-500 mb-1">Ghi chú</label>
+            <input type="text" name="note"
+                class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500"
+                placeholder="đóng gỗ, SG giao nhà xe">
+        </div>
+
+        <div id="form-result"></div>
+
+        <button type="submit"
+            class="w-full py-3 bg-primary-600 text-white rounded-xl font-medium hover:bg-primary-700 transition-colors">
+            💾 Tạo đơn hàng
+        </button>
+    </form>
+</div>
+
+<script>
+    function calcShip() {
+        const w = parseFloat(document.getElementById('weight')?.value) || 0;
+        const v = parseFloat(document.getElementById('volume')?.value) || 0;
+        const sheet = document.querySelector('input[name="sheet_type"]:checked')?.value || 'DON';
+        const el = document.getElementById('ship-calc');
+        if (!el) return;
+
+        let cost, formula;
+        if (sheet === 'DON') {
+            cost = Math.max(w * 14000, v * 2100000);
+            formula = `max(${w.toFixed(1)} × 14,000, ${v.toFixed(2)} × 2,100,000)`;
+        } else {
+            cost = w * 28000;
+            formula = `${w.toFixed(1)} × 28,000`;
+        }
+
+        if (cost > 0) {
+            el.innerHTML = `🚚 Ship ước tính: <strong>${cost.toLocaleString('vi-VN')} đ</strong> <span class="text-gray-400">(${formula})</span>`;
+        } else {
+            el.innerHTML = '';
+        }
+    }
+
+    // Set today's date
+    document.addEventListener('DOMContentLoaded', function() {
+        const now = new Date();
+        const dd = String(now.getDate()).padStart(2, '0');
+        const mm = String(now.getMonth() + 1).padStart(2, '0');
+        document.getElementById('order_date').value = `${dd}/${mm}`;
+    });
+</script>
+{% endblock %}

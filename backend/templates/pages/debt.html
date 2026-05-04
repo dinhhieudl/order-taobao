@@ -1,0 +1,76 @@
+{% extends "base.html" %}
+{% block title %}Công nợ - Quản lý Vận đơn{% endblock %}
+{% block page_title %}💰 Công nợ{% endblock %}
+
+{% block content %}
+<!-- Summary cards -->
+<div class="grid grid-cols-3 gap-4 mb-6">
+    <div class="bg-white rounded-xl border border-gray-200 shadow-sm p-4 text-center">
+        <div class="text-sm text-gray-500">Tổng giá trị</div>
+        <div class="text-xl font-bold text-gray-900 mt-1">{{ "{:,.0f}".format(totals[0]) }} đ</div>
+    </div>
+    <div class="bg-white rounded-xl border border-gray-200 shadow-sm p-4 text-center">
+        <div class="text-sm text-gray-500">Đã thu</div>
+        <div class="text-xl font-bold text-green-600 mt-1">{{ "{:,.0f}".format(totals[1]) }} đ</div>
+    </div>
+    <div class="bg-white rounded-xl border border-gray-200 shadow-sm p-4 text-center">
+        <div class="text-sm text-gray-500">Còn nợ</div>
+        <div class="text-xl font-bold text-red-600 mt-1">{{ "{:,.0f}".format(totals[2]) }} đ</div>
+    </div>
+</div>
+
+<!-- Search -->
+<div class="mb-4">
+    <input type="text" value="{{ query }}" placeholder="Tìm khách hàng..."
+        class="w-full max-w-md px-4 py-2 border border-gray-300 rounded-lg"
+        name="q"
+        hx-get="/api/debt-summary"
+        hx-trigger="input changed delay:300ms, search"
+        hx-target="#debt-table-body"
+        hx-swap="innerHTML">
+</div>
+
+<!-- Debt table -->
+<div class="bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden">
+    <table class="w-full text-sm">
+        <thead class="bg-gray-50 border-b">
+            <tr>
+                <th class="px-3 py-3 text-left text-xs font-medium text-gray-500">Khách hàng</th>
+                <th class="px-3 py-3 text-left text-xs font-medium text-gray-500">SĐT</th>
+                <th class="px-3 py-3 text-center text-xs font-medium text-gray-500">Đơn</th>
+                <th class="px-3 py-3 text-right text-xs font-medium text-gray-500">Tổng giá</th>
+                <th class="px-3 py-3 text-right text-xs font-medium text-gray-500">Đã cọc</th>
+                <th class="px-3 py-3 text-right text-xs font-medium text-gray-500">Còn nợ</th>
+                <th class="px-3 py-3 text-left text-xs font-medium text-gray-500 w-32">Tiến độ</th>
+            </tr>
+        </thead>
+        <tbody id="debt-table-body" class="divide-y divide-gray-100">
+            {% for d in debts %}
+            {% set pct = (d[4] / d[3] * 100)|int if d[3] > 0 else 0 %}
+            <tr class="hover:bg-gray-50">
+                <td class="px-3 py-2.5 font-medium">
+                    <a href="/tim-kiem?q={{ d[1] }}" class="hover:text-primary-600">{{ d[0] }}</a>
+                </td>
+                <td class="px-3 py-2.5 text-sm">{{ d[1] }}</td>
+                <td class="px-3 py-2.5 text-center">{{ d[2] }}</td>
+                <td class="px-3 py-2.5 text-right">{{ "{:,.0f}".format(d[3]) }} đ</td>
+                <td class="px-3 py-2.5 text-right text-green-600">{{ "{:,.0f}".format(d[4]) }} đ</td>
+                <td class="px-3 py-2.5 text-right font-semibold text-red-600">{{ "{:,.0f}".format(d[5]) }} đ</td>
+                <td class="px-3 py-2.5">
+                    <div class="w-full bg-gray-200 rounded-full h-2">
+                        <div class="h-2 rounded-full {% if pct < 50 %}bg-red-500{% elif pct < 80 %}bg-yellow-500{% else %}bg-green-500{% endif %}" style="width:{{ pct }}%"></div>
+                    </div>
+                    <div class="text-xs text-gray-400 mt-0.5">{{ pct }}%</div>
+                </td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+    {% if not debts %}
+    <div class="p-8 text-center text-gray-400">
+        <div class="text-4xl mb-2">✅</div>
+        <p>Không có công nợ</p>
+    </div>
+    {% endif %}
+</div>
+{% endblock %}
