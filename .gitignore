@@ -1,6 +1,7 @@
 # Credentials (NEVER commit)
 *.json
 !package.json
+credentials/
 
 # Python
 __pycache__/

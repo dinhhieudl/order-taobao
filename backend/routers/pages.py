@@ -71,20 +71,27 @@ async def search_page(request: Request, q: str = Query("", alias="q")):
     try:
         results = []
         if q.strip():
-            # Search by phone, name, or tracking number
             q_clean = re.sub(r'\s+', '', q)
             like = f"%{q}%"
             like_clean = f"%{q_clean}%"
+
+            # Support search by last 4-10 digits of phone number
+            phone_tail_conditions = ""
+            phone_params = []
+            if q_clean.isdigit() and 4 <= len(q_clean) <= 10:
+                phone_tail_conditions = " OR o.customer_phone LIKE ?"
+                phone_params = [f"%{q_clean}"]
+
             results = await db.execute_fetchall(
-                """SELECT o.*, GROUP_CONCAT(oi.product_name, ' | ') as products
+                f"""SELECT o.*, GROUP_CONCAT(oi.product_name, ' | ') as products
                 FROM orders o
                 LEFT JOIN order_items oi ON oi.order_id = o.id
                 WHERE o.customer_phone LIKE ? OR o.customer_name LIKE ?
-                    OR o.tracking_cn LIKE ? OR o.tracking_vn LIKE ?
+                    OR o.tracking_cn LIKE ? OR o.tracking_vn LIKE ?{phone_tail_conditions}
                 GROUP BY o.id
                 ORDER BY o.row_start DESC
                 LIMIT 50""",
-                (like_clean, like, like, like)
+                [like_clean, like, like, like] + phone_params
             )
 
         return templates.TemplateResponse("pages/search.html", {
@@ -285,3 +292,20 @@ async def report_page(request: Request):
         })
     finally:
         await db.close()
+
+
+@router.get("/cau-hinh", response_class=HTMLResponse)
+async def settings_page(request: Request):
+    from ..config import GOOGLE_CREDS_FILE, SPREADSHEET_ID, GHN_TOKEN, VTP_TOKEN
+    import os
+    
+    # Get just the filename, not full path
+    creds_filename = os.path.basename(GOOGLE_CREDS_FILE)
+    
+    return templates.TemplateResponse("pages/settings.html", {
+        "request": request,
+        "creds_file": creds_filename,
+        "spreadsheet_id": SPREADSHEET_ID,
+        "ghn_token": GHN_TOKEN,
+        "vtp_token": VTP_TOKEN,
+    })

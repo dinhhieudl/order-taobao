@@ -1,12 +1,14 @@
 """API endpoints for HTMX interactions and data operations."""
-from fastapi import APIRouter, Request, Query, Form
+from fastapi import APIRouter, Request, Query, Form, UploadFile, File
 from fastapi.responses import HTMLResponse, JSONResponse
 from ..services.cache import sync_all, get_sync_info, calc_shipping
 from ..services.sheets import append_order_to_sheet, parse_money
 from ..services.tracking import parse_tracking_info
 from ..models.database import get_db
-from ..config import DON_RATE_PER_KG, DON_RATE_PER_M3, DON2_RATE_PER_KG
+from ..config import DON_RATE_PER_KG, DON_RATE_PER_M3, DON2_RATE_PER_KG, CREDENTIALS_DIR, BASE_DIR
 import json
+import os
+import shutil
 from datetime import datetime
 
 router = APIRouter(tags=["api"])
@@ -179,8 +181,14 @@ async def create_order(
     total_price: int = Form(0),
     deposit: int = Form(0),
 ):
-    """Create new order and write to Google Sheets."""
-    remaining = total_price - deposit
+    """Create new order and write to Google Sheets.
+    
+    Note: 'remaining' is NOT written to the sheet because the sheet has its own
+    formula (remaining = price - payment). When customer pays more, the sheet
+    auto-updates the remaining column.
+    """
+    # Normalize tracking CN: uppercase, remove spaces
+    tracking_cn_clean = tracking_cn.strip().upper().replace(" ", "").replace("\t", "")
 
     order_data = {
         "order_date": order_date or datetime.now().strftime("%d/%m"),
@@ -191,13 +199,13 @@ async def create_order(
         "product_name": product_name,
         "weight": weight,
         "volume": volume,
-        "tracking_cn": tracking_cn.replace(" ", ""),
-        "tracking_vn": tracking_vn,
+        "tracking_cn": tracking_cn_clean,
+        "tracking_vn": tracking_vn.strip(),
         "account": account,
         "note": note,
         "total_price": total_price,
         "deposit": deposit,
-        "remaining": remaining,
+        "remaining": 0,  # Not written to sheet - formula handles it
         "status": "",
     }
 
@@ -213,6 +221,7 @@ async def create_order(
             </div>
             <div class="text-sm text-green-600 mt-1">
                 Đã ghi vào sheet {sheet_type} • {customer_name} • {total_price:,.0f} đ
+                {f' • VĐ TQ: {tracking_cn_clean}' if tracking_cn_clean else ''}
             </div>
         </div>
         """)
@@ -283,3 +292,109 @@ async def debt_summary(q: str = Query("", alias="q")):
         return HTMLResponse(rows)
     finally:
         await db.close()
+
+
+@router.post("/upload-credentials")
+async def upload_credentials(file: UploadFile = File(...)):
+    """Upload Google Service Account JSON credentials."""
+    if not file.filename.endswith('.json'):
+        return HTMLResponse("""
+        <div class="bg-red-50 border border-red-200 rounded-lg p-3 text-red-700 text-sm">
+            ❌ File phải có đuôi .json
+        </div>
+        """, status_code=400)
+
+    try:
+        # Validate JSON content
+        content = await file.read()
+        data = json.loads(content)
+
+        if "type" not in data or data.get("type") != "service_account":
+            return HTMLResponse("""
+            <div class="bg-red-50 border border-red-200 rounded-lg p-3 text-red-700 text-sm">
+                ❌ File không phải Service Account credentials hợp lệ
+            </div>
+            """, status_code=400)
+
+        # Save to credentials directory
+        dest = CREDENTIALS_DIR / file.filename
+        with open(dest, "wb") as f:
+            f.write(content)
+
+        # Update .env with new creds file path
+        env_path = BASE_DIR / ".env"
+        _update_env_var(env_path, "GOOGLE_CREDS_FILE", str(dest))
+
+        return HTMLResponse(f"""
+        <div class="bg-green-50 border border-green-200 rounded-lg p-3 text-green-700 text-sm">
+            ✅ Đã upload <strong>{file.filename}</strong> vào thư mục credentials/
+            <br><span class="text-green-600">Đã cập nhật GOOGLE_CREDS_FILE trong .env. Restart server để áp dụng.</span>
+        </div>
+        """)
+    except json.JSONDecodeError:
+        return HTMLResponse("""
+        <div class="bg-red-50 border border-red-200 rounded-lg p-3 text-red-700 text-sm">
+            ❌ File không phải JSON hợp lệ
+        </div>
+        """, status_code=400)
+    except Exception as e:
+        return HTMLResponse(f"""
+        <div class="bg-red-50 border border-red-200 rounded-lg p-3 text-red-700 text-sm">
+            ❌ Lỗi: {str(e)}
+        </div>
+        """, status_code=500)
+
+
+@router.post("/update-config")
+async def update_config(
+    GOOGLE_CREDS_FILE: str = Form(""),
+    SPREADSHEET_ID: str = Form(""),
+    GHN_TOKEN: str = Form(""),
+    VTP_TOKEN: str = Form(""),
+):
+    """Update .env configuration file."""
+    try:
+        env_path = BASE_DIR / ".env"
+
+        if GOOGLE_CREDS_FILE:
+            _update_env_var(env_path, "GOOGLE_CREDS_FILE", GOOGLE_CREDS_FILE)
+        if SPREADSHEET_ID:
+            _update_env_var(env_path, "SPREADSHEET_ID", SPREADSHEET_ID)
+        _update_env_var(env_path, "GHN_TOKEN", GHN_TOKEN)
+        _update_env_var(env_path, "VTP_TOKEN", VTP_TOKEN)
+
+        return HTMLResponse("""
+        <div class="bg-green-50 border border-green-200 rounded-lg p-3 text-green-700 text-sm">
+            ✅ Đã lưu cấu hình vào .env. <strong>Restart server để áp dụng thay đổi.</strong>
+        </div>
+        """)
+    except Exception as e:
+        return HTMLResponse(f"""
+        <div class="bg-red-50 border border-red-200 rounded-lg p-3 text-red-700 text-sm">
+            ❌ Lỗi: {str(e)}
+        </div>
+        """, status_code=500)
+
+
+def _update_env_var(env_path: str, key: str, value: str):
+    """Update or add a key=value in .env file."""
+    lines = []
+    found = False
+
+    if os.path.exists(env_path):
+        with open(env_path, "r") as f:
+            lines = f.readlines()
+
+    new_lines = []
+    for line in lines:
+        if line.strip().startswith(f"{key}="):
+            new_lines.append(f"{key}={value}\n")
+            found = True
+        else:
+            new_lines.append(line)
+
+    if not found:
+        new_lines.append(f"{key}={value}\n")
+
+    with open(env_path, "w") as f:
+        f.writelines(new_lines)

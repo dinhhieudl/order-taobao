@@ -265,7 +265,12 @@ def read_all_orders() -> list:
     return don_orders + don2_orders
 
 def append_order_to_sheet(sheet_type: str, order_data: dict):
-    """Append a new order to the appropriate sheet."""
+    """Append a new order to the appropriate sheet.
+    
+    Note: 'remaining' (hàng về tt) is intentionally left empty to preserve
+    the sheet's existing formula. The sheet calculates remaining automatically
+    when payment is recorded in the payment column.
+    """
     sh = get_spreadsheet()
 
     if sheet_type == "DON":
@@ -290,7 +295,7 @@ def append_order_to_sheet(sheet_type: str, order_data: dict):
             order_data.get("note", ""),
             f"{order_data.get('total_price', 0):,.0f} đ" if order_data.get("total_price") else "",
             f"{order_data.get('deposit', 0):,.0f} đ" if order_data.get("deposit") else "",
-            f"{order_data.get('remaining', 0):,.0f} đ" if order_data.get("remaining") else "",
+            "",  # hàng về tt - LEAVE EMPTY to preserve sheet formula
             "",  # extra fee
             order_data.get("status", ""),
             "",  # mã bốc
@@ -318,7 +323,7 @@ def append_order_to_sheet(sheet_type: str, order_data: dict):
             order_data.get("note", ""),
             f"{order_data.get('total_price', 0):,.0f} đ" if order_data.get("total_price") else "",
             f"{order_data.get('deposit', 0):,.0f} đ" if order_data.get("deposit") else "",
-            f"{order_data.get('remaining', 0):,.0f} đ" if order_data.get("remaining") else "",
+            "",  # remaining - LEAVE EMPTY to preserve sheet formula
             "",  # extra
             order_data.get("status", ""),
             "",  # shipping fee manual
