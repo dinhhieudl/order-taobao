@@ -15,7 +15,10 @@ async def lifespan(app: FastAPI):
 
 app = FastAPI(title="Quản lý Vận đơn Taobao", lifespan=lifespan)
 
-app.mount("/static", StaticFiles(directory=BASE_DIR / "static"), name="static")
+static_dir = BASE_DIR / "static"
+if not static_dir.exists():
+    static_dir.mkdir(parents=True, exist_ok=True)
+app.mount("/static", StaticFiles(directory=static_dir), name="static")
 templates = Jinja2Templates(directory=BASE_DIR / "templates")
 
 # Register routers

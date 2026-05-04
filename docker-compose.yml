@@ -4,11 +4,18 @@ services:
     ports:
       - "8000:8000"
     volumes:
-      - ./data:/app/data
-      - ./credentials.json:/app/credentials.json:ro
+      - ./data:/app/data                    # SQLite cache persistence
+      - ./credentials:/app/credentials:ro    # Service Account JSON files
+      - ./.env:/app/.env:ro                  # Environment config (optional)
     environment:
-      - GOOGLE_CREDS_FILE=/app/credentials.json
+      - GOOGLE_CREDS_FILE=/app/credentials/an-helper-2e2bcd71c709.json
       - SPREADSHEET_ID=1mFlnUi2HNMFCxxTXAzBc2IMwn32v2qq6IhCCPi5eM1w
       - HOST=0.0.0.0
       - PORT=8000
     restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/')"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 10s
