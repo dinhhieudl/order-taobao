@@ -1,11 +1,13 @@
 """API endpoints for HTMX interactions, data operations, charts, and exports."""
-from fastapi import APIRouter, Request, Query, Form, UploadFile, File
+from fastapi import APIRouter, Request, Query, Form, UploadFile, File, Depends
 from fastapi.responses import HTMLResponse, JSONResponse, StreamingResponse
 from ..services.cache import sync_all, get_sync_info, calc_shipping
 from ..services.sheets import append_order_to_sheet, parse_money
 from ..services.tracking import parse_tracking_info
+from ..services.buffer import save_to_buffer, get_buffer_count, flush_buffer
 from ..models.database import get_db
 from ..config import DON_RATE_PER_KG, DON_RATE_PER_M3, DON2_RATE_PER_KG, CREDENTIALS_DIR, BASE_DIR
+from ..auth import verify_user, verify_admin
 import json
 import os
 import shutil
@@ -14,8 +16,22 @@ from datetime import datetime, timedelta
 
 router = APIRouter(tags=["api"])
 
+
+def js_escape(s: str) -> str:
+    """Escape string for safe embedding in JS onclick handler."""
+    if not s:
+        return ""
+    return (s
+        .replace("\\", "\\\\")
+        .replace("'", "\\'")
+        .replace('"', '\\"')
+        .replace("\n", "\\n")
+        .replace("\r", "\\r")
+        .replace("<", "&lt;")
+        .replace(">", "&gt;"))
+
 @router.post("/sync")
-async def sync_data():
+async def sync_data(user: str = Depends(verify_user)):
     """Sync from Google Sheets to local cache."""
     try:
         count = await sync_all()
@@ -65,7 +81,7 @@ async def search_customer(q: str = Query("", alias="q")):
         for r in results:
             items += f"""
             <div class="px-3 py-2 hover:bg-blue-50 cursor-pointer flex justify-between items-center"
-                 hx-on:click="fillCustomer('{r[0]}', '{r[1]}', '{r[2]}')"
+                 hx-on:click="fillCustomer('{js_escape(r[0])}', '{js_escape(r[1])}', '{js_escape(r[2])}')"
                  hx-on:mouseenter="this.classList.add('bg-blue-50')"
                  hx-on:mouseleave="this.classList.remove('bg-blue-50')">
                 <div>
@@ -254,6 +270,33 @@ async def create_order(
     """Create new order and write to Google Sheets."""
     tracking_cn_clean = tracking_cn.strip().upper().replace(" ", "").replace("\t", "")
 
+    # [H-03] Check duplicate tracking_cn before write
+    if tracking_cn_clean:
+        db = await get_db()
+        try:
+            existing = await db.execute_fetchall(
+                "SELECT id, customer_name, sheet_type FROM orders WHERE tracking_cn = ?",
+                (tracking_cn_clean,)
+            )
+            if existing:
+                dup_info = existing[0]
+                return HTMLResponse(f"""
+                <div class="bg-yellow-50 border border-yellow-300 rounded-lg p-4">
+                    <div class="flex items-center gap-2 text-yellow-800 font-medium">
+                        <svg class="w-5 h-5" fill="currentColor" viewBox="0 0 20 20">
+                            <path fill-rule="evenodd" d="M8.257 3.099c.765-1.36 2.722-1.36 3.486 0l5.58 9.92c.75 1.334-.213 2.98-1.742 2.98H4.42c-1.53 0-2.493-1.646-1.743-2.98l5.58-9.92zM11 13a1 1 0 11-2 0 1 1 0 012 0zm-1-8a1 1 0 00-1 1v3a1 1 0 002 0V6a1 1 0 00-1-1z" clip-rule="evenodd"/>
+                        </svg>
+                        Mã VĐ TQ trùng lặp!
+                    </div>
+                    <div class="text-sm text-yellow-700 mt-2">
+                        Mã <strong>{tracking_cn_clean}</strong> đã tồn tại trong đơn
+                        <strong>{dup_info[1]}</strong> (sheet {dup_info[2]}, #{dup_info[0]}).
+                    </div>
+                </div>
+                """, status_code=409)
+        finally:
+            await db.close()
+
     order_data = {
         "order_date": order_date or datetime.now().strftime("%d/%m"),
         "customer_name": customer_name,
@@ -290,11 +333,23 @@ async def create_order(
         </div>
         """)
     except Exception as e:
+        # [H-08] Save to local buffer instead of just showing error
+        save_to_buffer({"sheet_type": sheet_type, **order_data}, str(e))
+        buffer_count = get_buffer_count()
         return HTMLResponse(f"""
-        <div class="bg-red-50 border border-red-200 rounded-lg p-4 text-red-700">
-            Lỗi: {str(e)}
+        <div class="bg-amber-50 border border-amber-200 rounded-lg p-4">
+            <div class="flex items-center gap-2 text-amber-700 font-medium">
+                <svg class="w-5 h-5" fill="currentColor" viewBox="0 0 20 20">
+                    <path fill-rule="evenodd" d="M8.257 3.099c.765-1.36 2.722-1.36 3.486 0l5.58 9.92c.75 1.334-.213 2.98-1.742 2.98H4.42c-1.53 0-2.493-1.646-1.743-2.98l5.58-9.92zM11 13a1 1 0 11-2 0 1 1 0 012 0zm-1-8a1 1 0 00-1 1v3a1 1 0 002 0V6a1 1 0 00-1-1z" clip-rule="evenodd"/>
+                </svg>
+                Không gửi được Google Sheets — Đã lưu tạm cục bộ
+            </div>
+            <div class="text-sm text-amber-600 mt-1">
+                Đơn của <strong>{customer_name}</strong> đã lưu vào bộ đệm.
+                {buffer_count} đơn đang chờ gửi. Sẽ tự động thử lại khi có kết nối.
+            </div>
         </div>
-        """, status_code=500)
+        """)
 
 @router.get("/calc-shipping")
 async def calc_shipping_api(
@@ -536,7 +591,7 @@ async def export_orders(
 
 
 @router.post("/upload-credentials")
-async def upload_credentials(file: UploadFile = File(...)):
+async def upload_credentials(file: UploadFile = File(...), user: str = Depends(verify_admin)):
     """Upload Google Service Account JSON credentials."""
     if not file.filename.endswith('.json'):
         return HTMLResponse("""
@@ -589,6 +644,7 @@ async def update_config(
     SPREADSHEET_ID: str = Form(""),
     GHN_TOKEN: str = Form(""),
     VTP_TOKEN: str = Form(""),
+    user: str = Depends(verify_admin),
 ):
     """Update .env configuration file."""
     try:
@@ -636,3 +692,34 @@ def _update_env_var(env_path: str, key: str, value: str):
 
     with open(env_path, "w") as f:
         f.writelines(new_lines)
+
+
+@router.post("/flush-buffer")
+async def flush_buffer_endpoint(user: str = Depends(verify_user)):
+    """Retry sending buffered orders to Google Sheets."""
+    try:
+        sent, failed = await flush_buffer()
+        if sent > 0 and failed == 0:
+            return HTMLResponse(f"""
+            <div class="bg-green-50 border border-green-200 rounded-lg p-3 text-green-700 text-sm">
+                ✅ Đã gửi thành công {sent} đơn từ bộ đệm
+            </div>
+            """)
+        elif sent > 0:
+            return HTMLResponse(f"""
+            <div class="bg-yellow-50 border border-yellow-200 rounded-lg p-3 text-yellow-700 text-sm">
+                ⚠️ Gửi {sent} đơn thành công, {failed} đơn vẫn lỗi
+            </div>
+            """)
+        else:
+            return HTMLResponse("""
+            <div class="bg-gray-50 border border-gray-200 rounded-lg p-3 text-gray-600 text-sm">
+                📭 Bộ đệm trống — không có đơn nào cần gửi
+            </div>
+            """)
+    except Exception as e:
+        return HTMLResponse(f"""
+        <div class="bg-red-50 border border-red-200 rounded-lg p-3 text-red-700 text-sm">
+            ❌ Lỗi: {str(e)}
+        </div>
+        """, status_code=500)

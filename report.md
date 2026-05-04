@@ -257,7 +257,30 @@ order-taobao/
 
 ---
 
-## 8. Known Issues
+## 8. Audit Results (2026-05-04)
+
+Xem chi tiết: `AUDIT_REPORT.md`
+
+### Đã vá (Critical + High)
+
+| Patch | Mô tả |
+|---|---|
+| C-01: XSS Fix | `js_escape()` cho tất cả customer data trong HTML/JS |
+| C-02: Basic Auth | Thêm xác thực qua `AUTH_USERS` env var |
+| C-03: Admin Auth | Bảo vệ `/api/update-config`, `/api/upload-credentials` |
+| H-03: Duplicate Check | Kiểm tra trùng VĐ TQ trước khi tạo đơn |
+| H-08: Local Buffer | Lưu tạm đơn vào `data/pending_orders.json` khi Sheets API lỗi |
+
+### Files mới
+
+| File | Mục đích |
+|---|---|
+| `backend/auth.py` | Basic Auth module |
+| `backend/services/buffer.py` | Local buffer cho đơn hàng lỗi |
+| `AUDIT_REPORT.md` | Báo cáo audit đầy đủ |
+| `PATCH_001_SECURITY.py` | Reference patches |
+
+### Còn lại cần sửa trên Sheet
 
 | Issue | Severity | Workaround |
 |---|---|---|
@@ -265,7 +288,6 @@ order-taobao/
 | 45 SĐT có nhiều tên | Low | Chuẩn hóa tên trên Sheet |
 | 6 đơn cọc > giá | Medium | Sửa trên Sheet |
 | Auto-sync chưa có | Low | Dùng nút "Đồng bộ" hoặc Auto-refresh |
-| Không có auth/multi-user | Medium | Phase 4 |
 
 ---
 

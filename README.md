@@ -286,29 +286,53 @@ order-taobao/
 
 ---
 
+## 🔐 Authentication
+
+Hệ thống hỗ trợ Basic Auth qua biến môi trường `AUTH_USERS`:
+
+```env
+# Format: username:password,username2:password2
+AUTH_USERS=admin:mat-khau-manh,nv1:mat-khau-nv1,nv2:mat-khau-nv2
+```
+
+- **Không set `AUTH_USERS`:** Hệ thống hoạt động như cũ (không cần đăng nhập)
+- **Có set `AUTH_USERS`:** Tất cả POST endpoints yêu cầu đăng nhập
+- **Admin-only endpoints:** `/api/update-config`, `/api/upload-credentials` chỉ admin mới truy cập
+- **Public endpoints (không cần auth):** Tất cả GET pages và search APIs
+
+Khi truy cập endpoint yêu cầu auth, trình duyệt sẽ hiện hộp thoại đăng nhập.
+
+## 🛡️ Bảo mật
+
+- **XSS Protection:** Customer data được escape trước khi render vào HTML/JS
+- **Duplicate Tracking Check:** Cảnh báo khi tạo đơn trùng mã VĐ TQ
+- **Local Buffer:** Đơn hàng tự động lưu tạm khi Google Sheets API lỗi
+- **Credential Safety:** File JSON credentials không bao giờ lộ ra UI
+
 ## 📡 API Endpoints
 
-| Method | Path | Mô tả |
-|---|---|---|
-| GET | `/` | Dashboard (KPI + charts + alerts) |
-| GET | `/tim-kiem?q=` | Tìm kiếm |
-| GET | `/don-hang` | Danh sách đơn (?sheet=&status=&account=&date_from=&date_to=&page=) |
-| GET | `/don-hang/{id}` | Chi tiết đơn |
-| GET | `/tao-don` | Form tạo đơn (smart form) |
-| GET | `/cong-no` | Công nợ |
-| GET | `/bao-cao` | Báo cáo |
-| GET | `/cau-hinh` | Cấu hình |
-| POST | `/api/sync` | Đồng bộ Sheet → SQLite |
-| GET | `/api/search-customer?q=` | Auto-fill khách hàng |
-| GET | `/api/customer-history?phone=` | 3 đơn gần nhất |
-| GET | `/api/search-tracking?q=` | Tìm theo tracking |
-| GET | `/api/dashboard-data` | JSON cho charts |
-| GET | `/api/export-orders?...` | Xuất Excel |
-| POST | `/api/create-order` | Tạo đơn → ghi Sheet |
-| GET | `/api/calc-shipping` | Tính phí ship |
-| GET | `/api/debt-summary` | Công nợ HTMX |
-| POST | `/api/upload-credentials` | Upload credentials JSON |
-| POST | `/api/update-config` | Cập nhật .env |
+| Method | Path | Auth | Mô tả |
+|---|---|---|---|
+| GET | `/` | — | Dashboard (KPI + charts + alerts) |
+| GET | `/tim-kiem?q=` | — | Tìm kiếm |
+| GET | `/don-hang` | — | Danh sách đơn |
+| GET | `/don-hang/{id}` | — | Chi tiết đơn |
+| GET | `/tao-don` | — | Form tạo đơn (smart form) |
+| GET | `/cong-no` | — | Công nợ |
+| GET | `/bao-cao` | — | Báo cáo |
+| GET | `/cau-hinh` | — | Cấu hình |
+| POST | `/api/sync` | User | Đồng bộ Sheet → SQLite |
+| GET | `/api/search-customer?q=` | — | Auto-fill khách hàng |
+| GET | `/api/customer-history?phone=` | — | 3 đơn gần nhất |
+| GET | `/api/search-tracking?q=` | — | Tìm theo tracking |
+| GET | `/api/dashboard-data` | — | JSON cho charts |
+| GET | `/api/export-orders?...` | — | Xuất Excel |
+| POST | `/api/create-order` | — | Tạo đơn → ghi Sheet |
+| GET | `/api/calc-shipping` | — | Tính phí ship |
+| GET | `/api/debt-summary` | — | Công nợ HTMX |
+| POST | `/api/upload-credentials` | Admin | Upload credentials JSON |
+| POST | `/api/update-config` | Admin | Cập nhật .env |
+| POST | `/api/flush-buffer` | User | Gửi lại đơn từ bộ đệm |
 
 ---
 
