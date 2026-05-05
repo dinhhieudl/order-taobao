@@ -319,11 +319,12 @@ def append_order_to_sheet(sheet_type: str, order_data: dict):
 
     if sheet_type == "DON":
         ws = sh.worksheet(SHEET_DON)
-        # DON columns: stt, stt(ngày), Tên, SDT, Địa chỉ, NGUỒN, SẢN PHẨM, KHỐI LƯỢNG,
-        # KÍCH THƯỚC, Vận đơn TQ, Vận đơn VN, ACC, (trống), NOTE, GIÁ, CỌC, hàng về tt,
-        # extra, Trạng Thái, Mã bốc, Mã vận đơn, Cân nặng, Thể tích
+        # DON columns: stt(A), stt/ngày(B), Tên(C), SDT(D), Địa chỉ(E), NGUỒN(F), SẢN PHẨM(G),
+        # KHỐI LƯỢNG(H), KÍCH THƯỚC(I), Vận đơn TQ(J), Vận đơn VN(K), ACC(L), (M), NOTE(N),
+        # GIÁ(O), CỌC(P), hàng về tt(Q), extra(R), Trạng Thái(S), Mã bốc(T), Mã vận đơn(U),
+        # Cân nặng(V), Thể tích(W)
+        # Note: append_row skips column A, element[0] → col B
         row = [
-            "",  # stt
             order_data.get("order_date", ""),
             order_data.get("customer_name", ""),
             order_data.get("customer_phone", ""),
