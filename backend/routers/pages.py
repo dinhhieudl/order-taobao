@@ -107,7 +107,6 @@ async def order_list(
     request: Request,
     sheet: str = Query("", alias="sheet"),
     status: str = Query("", alias="status"),
-    account: str = Query("", alias="account"),
     date_from: str = Query("", alias="date_from"),
     date_to: str = Query("", alias="date_to"),
     page: int = Query(1, alias="page"),
@@ -125,9 +124,6 @@ async def order_list(
         if status:
             where_clauses.append("o.status = ?")
             params.append(status)
-        if account:
-            where_clauses.append("o.account = ?")
-            params.append(account)
 
         where = "WHERE " + " AND ".join(where_clauses) if where_clauses else ""
 
@@ -147,14 +143,10 @@ async def order_list(
 
         total_pages = (total + per_page - 1) // per_page
 
-        # Get distinct accounts and statuses for filter dropdowns
-        acc_rows = await db.execute_fetchall(
-            "SELECT DISTINCT account FROM orders WHERE account != '' ORDER BY account"
-        )
+        # Get distinct statuses for filter dropdown
         status_rows = await db.execute_fetchall(
             "SELECT DISTINCT status FROM orders WHERE status != '' ORDER BY status"
         )
-        accounts = [r[0] for r in acc_rows]
         statuses = [r[0] for r in status_rows]
 
         return templates.TemplateResponse("pages/orders.html", {
@@ -162,13 +154,11 @@ async def order_list(
             "orders": rows,
             "sheet_filter": sheet,
             "status_filter": status,
-            "account_filter": account,
             "date_from": date_from,
             "date_to": date_to,
             "page": page,
             "total_pages": total_pages,
             "total": total,
-            "accounts": accounts,
             "statuses": statuses,
         })
     finally:
@@ -258,17 +248,6 @@ async def report_page(request: Request):
             FROM orders GROUP BY sheet_type"""
         )
 
-        # Revenue by account
-        by_acc = await db.execute_fetchall(
-            """SELECT account,
-                COUNT(*) as orders,
-                COALESCE(SUM(total_price),0) as revenue,
-                COALESCE(SUM(deposit),0) as collected,
-                COALESCE(SUM(remaining),0) as outstanding
-            FROM orders WHERE account != ''
-            GROUP BY account ORDER BY revenue DESC"""
-        )
-
         # Revenue by date (last 30 days with data)
         by_date = await db.execute_fetchall(
             """SELECT order_date,
@@ -306,7 +285,6 @@ async def report_page(request: Request):
         return templates.TemplateResponse("pages/report.html", {
             "request": request,
             "by_sheet": by_sheet,
-            "by_acc": by_acc,
             "by_date": by_date,
             "shipping_don": shipping_don[0] if shipping_don else (0,0),
             "shipping_don2": shipping_don2[0] if shipping_don2 else (0,0),

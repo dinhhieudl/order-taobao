@@ -57,38 +57,6 @@
     </div>
 </div>
 
-<!-- By Account -->
-<div class="bg-white rounded-xl border border-gray-200 shadow-sm p-5 mb-6">
-    <h3 class="font-semibold text-gray-800 mb-4">👤 Hiệu suất theo ACC</h3>
-    <div class="overflow-x-auto">
-        <table class="w-full text-sm">
-            <thead class="bg-gray-50">
-                <tr>
-                    <th class="px-3 py-2 text-left">ACC</th>
-                    <th class="px-3 py-2 text-right">Đơn</th>
-                    <th class="px-3 py-2 text-right">Doanh thu</th>
-                    <th class="px-3 py-2 text-right">Đã thu</th>
-                    <th class="px-3 py-2 text-right">Còn nợ</th>
-                    <th class="px-3 py-2 text-right">TB/đơn</th>
-                </tr>
-            </thead>
-            <tbody class="divide-y">
-                {% for r in by_acc %}
-                {% set avg = r[2] / r[1] if r[1] > 0 else 0 %}
-                <tr class="hover:bg-gray-50">
-                    <td class="px-3 py-2 font-medium">{{ r[0] }}</td>
-                    <td class="px-3 py-2 text-right">{{ r[1] }}</td>
-                    <td class="px-3 py-2 text-right font-medium">{{ "{:,.0f}".format(r[2]) }} đ</td>
-                    <td class="px-3 py-2 text-right text-green-600">{{ "{:,.0f}".format(r[3]) }} đ</td>
-                    <td class="px-3 py-2 text-right text-red-600">{{ "{:,.0f}".format(r[4]) }} đ</td>
-                    <td class="px-3 py-2 text-right text-gray-500">{{ "{:,.0f}".format(avg|int) }} đ</td>
-                </tr>
-                {% endfor %}
-            </tbody>
-        </table>
-    </div>
-</div>
-
 <!-- By Date -->
 <div class="bg-white rounded-xl border border-gray-200 shadow-sm p-5">
     <h3 class="font-semibold text-gray-800 mb-4">📅 Doanh thu theo ngày</h3>

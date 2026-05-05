@@ -28,17 +28,6 @@
                 </select>
             </div>
 
-            <!-- Account -->
-            <div>
-                <label class="block text-xs text-gray-500 mb-1">Người đặt (ACC)</label>
-                <select name="account" class="px-3 py-2 border border-gray-300 rounded-lg text-sm">
-                    <option value="">Tất cả</option>
-                    {% for a in accounts %}
-                    <option value="{{ a }}" {% if account_filter == a %}selected{% endif %}>{{ a }}</option>
-                    {% endfor %}
-                </select>
-            </div>
-
             <!-- Date from -->
             <div>
                 <label class="block text-xs text-gray-500 mb-1">Từ ngày</label>
@@ -72,7 +61,7 @@
 <!-- Action bar -->
 <div class="flex items-center justify-between mb-4">
     <div class="flex items-center gap-2 text-sm text-gray-500">
-        {% if sheet_filter or status_filter or account_filter or date_from or date_to %}
+        {% if sheet_filter or status_filter or date_from or date_to %}
         <span class="bg-primary-50 text-primary-700 px-2 py-1 rounded text-xs">Đang lọc</span>
         {% endif %}
     </div>
@@ -97,7 +86,6 @@
                     <th class="px-3 py-3 text-left text-xs font-medium text-gray-500">Khách hàng</th>
                     <th class="px-3 py-3 text-left text-xs font-medium text-gray-500">Sản phẩm</th>
                     <th class="px-3 py-3 text-left text-xs font-medium text-gray-500">Sheet</th>
-                    <th class="px-3 py-3 text-left text-xs font-medium text-gray-500">ACC</th>
                     <th class="px-3 py-3 text-left text-xs font-medium text-gray-500">VĐ TQ</th>
                     <th class="px-3 py-3 text-left text-xs font-medium text-gray-500">VĐ VN</th>
                     <th class="px-3 py-3 text-right text-xs font-medium text-gray-500">Giá</th>
@@ -118,7 +106,6 @@
                             {{ o[1] }}
                         </span>
                     </td>
-                    <td class="px-3 py-2.5 text-xs text-gray-500">{{ o[9] or '' }}</td>
                     <td class="px-3 py-2.5 font-mono text-xs">{{ o[7][:15] if o[7] else '-' }}</td>
                     <td class="px-3 py-2.5 font-mono text-xs">{{ o[8][:15] if o[8] else '-' }}</td>
                     <td class="px-3 py-2.5 text-right font-medium">{{ "{:,.0f}".format(o[11]) }} đ</td>
@@ -149,21 +136,21 @@
         <span class="text-sm text-gray-500">Trang {{ page }} / {{ total_pages }}</span>
         <div class="flex gap-1">
             {% if page > 1 %}
-            <a href="?sheet={{ sheet_filter }}&status={{ status_filter }}&account={{ account_filter }}&date_from={{ date_from }}&date_to={{ date_to }}&page={{ page - 1 }}"
+            <a href="?sheet={{ sheet_filter }}&status={{ status_filter }}&date_from={{ date_from }}&date_to={{ date_to }}&page={{ page - 1 }}"
                 class="px-3 py-1 border rounded text-sm hover:bg-gray-100">←</a>
             {% endif %}
             {% for p in range(1, total_pages + 1) %}
                 {% if p == page %}
                 <span class="px-3 py-1 bg-primary-600 text-white rounded text-sm">{{ p }}</span>
                 {% elif (p - page)|abs <= 2 or p == 1 or p == total_pages %}
-                <a href="?sheet={{ sheet_filter }}&status={{ status_filter }}&account={{ account_filter }}&date_from={{ date_from }}&date_to={{ date_to }}&page={{ p }}"
+                <a href="?sheet={{ sheet_filter }}&status={{ status_filter }}&date_from={{ date_from }}&date_to={{ date_to }}&page={{ p }}"
                     class="px-3 py-1 border rounded text-sm hover:bg-gray-100">{{ p }}</a>
                 {% elif (p - page)|abs == 3 %}
                 <span class="px-1 py-1 text-gray-400">...</span>
                 {% endif %}
             {% endfor %}
             {% if page < total_pages %}
-            <a href="?sheet={{ sheet_filter }}&status={{ status_filter }}&account={{ account_filter }}&date_from={{ date_from }}&date_to={{ date_to }}&page={{ page + 1 }}"
+            <a href="?sheet={{ sheet_filter }}&status={{ status_filter }}&date_from={{ date_from }}&date_to={{ date_to }}&page={{ page + 1 }}"
                 class="px-3 py-1 border rounded text-sm hover:bg-gray-100">→</a>
             {% endif %}
         </div>

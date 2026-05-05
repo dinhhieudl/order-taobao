@@ -256,59 +256,25 @@ async def create_order(
     customer_name: str = Form(...),
     customer_phone: str = Form(""),
     customer_address: str = Form(""),
-    source: str = Form(""),
     product_name: str = Form(""),
-    weight: float = Form(0),
-    volume: float = Form(0),
-    tracking_cn: str = Form(""),
-    tracking_vn: str = Form(""),
-    account: str = Form(""),
     note: str = Form(""),
     total_price: int = Form(0),
     deposit: int = Form(0),
 ):
     """Create new order and write to Google Sheets."""
-    tracking_cn_clean = tracking_cn.strip().upper().replace(" ", "").replace("\t", "")
-
-    # [H-03] Check duplicate tracking_cn before write
-    if tracking_cn_clean:
-        db = await get_db()
-        try:
-            existing = await db.execute_fetchall(
-                "SELECT id, customer_name, sheet_type FROM orders WHERE tracking_cn = ?",
-                (tracking_cn_clean,)
-            )
-            if existing:
-                dup_info = existing[0]
-                return HTMLResponse(f"""
-                <div class="bg-yellow-50 border border-yellow-300 rounded-lg p-4">
-                    <div class="flex items-center gap-2 text-yellow-800 font-medium">
-                        <svg class="w-5 h-5" fill="currentColor" viewBox="0 0 20 20">
-                            <path fill-rule="evenodd" d="M8.257 3.099c.765-1.36 2.722-1.36 3.486 0l5.58 9.92c.75 1.334-.213 2.98-1.742 2.98H4.42c-1.53 0-2.493-1.646-1.743-2.98l5.58-9.92zM11 13a1 1 0 11-2 0 1 1 0 012 0zm-1-8a1 1 0 00-1 1v3a1 1 0 002 0V6a1 1 0 00-1-1z" clip-rule="evenodd"/>
-                        </svg>
-                        Mã VĐ TQ trùng lặp!
-                    </div>
-                    <div class="text-sm text-yellow-700 mt-2">
-                        Mã <strong>{tracking_cn_clean}</strong> đã tồn tại trong đơn
-                        <strong>{dup_info[1]}</strong> (sheet {dup_info[2]}, #{dup_info[0]}).
-                    </div>
-                </div>
-                """, status_code=409)
-        finally:
-            await db.close()
 
     order_data = {
         "order_date": order_date or datetime.now().strftime("%d/%m"),
         "customer_name": customer_name,
         "customer_phone": customer_phone.replace(" ", ""),
         "customer_address": customer_address,
-        "source": source,
+        "source": "",
         "product_name": product_name,
-        "weight": weight,
-        "volume": volume,
-        "tracking_cn": tracking_cn_clean,
-        "tracking_vn": tracking_vn.strip(),
-        "account": account,
+        "weight": 0,
+        "volume": 0,
+        "tracking_cn": "",
+        "tracking_vn": "",
+        "account": "",
         "note": note,
         "total_price": total_price,
         "deposit": deposit,
@@ -328,7 +294,6 @@ async def create_order(
             </div>
             <div class="text-sm text-green-600 mt-1">
                 Đã ghi vào sheet {sheet_type} • {customer_name} • {total_price:,.0f} đ
-                {f' • VĐ TQ: {tracking_cn_clean}' if tracking_cn_clean else ''}
             </div>
         </div>
         """)
@@ -432,13 +397,6 @@ async def dashboard_data():
             LIMIT 10"""
         )
 
-        # ACC distribution (order count)
-        acc_dist = await db.execute_fetchall(
-            """SELECT account, COUNT(*) as cnt
-            FROM orders WHERE account != ''
-            GROUP BY account ORDER BY cnt DESC"""
-        )
-
         # Shipping alerts: TQ tracking > 7 days, no VN tracking
         seven_days_ago = (datetime.now() - timedelta(days=7)).strftime("%Y-%m-%d")
         shipping_alerts = await db.execute_fetchall(
@@ -469,7 +427,6 @@ async def dashboard_data():
 
         return JSONResponse({
             "top_debt": [{"name": r[0], "phone": r[1], "debt": r[2], "count": r[3]} for r in top_debt],
-            "acc_distribution": [{"account": r[0], "count": r[1]} for r in acc_dist],
             "shipping_alerts": [
                 {"id": r[0], "name": r[1], "phone": r[2], "tracking_cn": r[3],
                  "date": r[4], "sheet": r[5], "synced": r[6], "products": r[7]}
@@ -491,7 +448,6 @@ async def dashboard_data():
 async def export_orders(
     sheet: str = Query("", alias="sheet"),
     status: str = Query("", alias="status"),
-    account: str = Query("", alias="account"),
     date_from: str = Query("", alias="date_from"),
     date_to: str = Query("", alias="date_to"),
 ):
@@ -509,15 +465,12 @@ async def export_orders(
         if status:
             where_clauses.append("o.status = ?")
             params.append(status)
-        if account:
-            where_clauses.append("o.account = ?")
-            params.append(account)
 
         where = "WHERE " + " AND ".join(where_clauses) if where_clauses else ""
 
         rows = await db.execute_fetchall(
             f"""SELECT o.order_date, o.customer_name, o.customer_phone, o.customer_address,
-                o.sheet_type, o.tracking_cn, o.tracking_vn, o.account,
+                o.sheet_type, o.tracking_cn, o.tracking_vn,
                 o.total_price, o.deposit, o.remaining, o.status, o.note,
                 GROUP_CONCAT(oi.product_name, ' | ') as products,
                 GROUP_CONCAT(oi.weight, ' | ') as weights,
@@ -543,7 +496,7 @@ async def export_orders(
         )
 
         headers = ["Ngày", "Khách hàng", "SĐT", "Địa chỉ", "Sheet", "Sản phẩm",
-                    "VĐ TQ", "VĐ VN", "ACC", "Tổng giá", "Cọc", "Còn lại", "Trạng thái", "Ghi chú"]
+                    "VĐ TQ", "VĐ VN", "Tổng giá", "Cọc", "Còn lại", "Trạng thái", "Ghi chú"]
 
         for col, header in enumerate(headers, 1):
             cell = ws.cell(row=1, column=col, value=header)
@@ -553,8 +506,8 @@ async def export_orders(
             cell.border = thin_border
 
         for row_idx, r in enumerate(rows, 2):
-            values = [r[0], r[1], r[2], r[3], r[4], r[13], r[5], r[6], r[7],
-                     r[8], r[9], r[10], r[11], r[12]]
+            values = [r[0], r[1], r[2], r[3], r[4], r[12], r[5], r[6],
+                     r[7], r[8], r[9], r[10], r[11]]
             for col, val in enumerate(values, 1):
                 cell = ws.cell(row=row_idx, column=col, value=val)
                 cell.border = thin_border
@@ -569,12 +522,12 @@ async def export_orders(
         # Summary row
         summary_row = len(rows) + 3
         ws.cell(row=summary_row, column=1, value="TỔNG CỘNG").font = Font(bold=True)
+        ws.cell(row=summary_row, column=9, value=sum(r[7] or 0 for r in rows)).font = Font(bold=True)
+        ws.cell(row=summary_row, column=9).number_format = '#,##0'
         ws.cell(row=summary_row, column=10, value=sum(r[8] or 0 for r in rows)).font = Font(bold=True)
         ws.cell(row=summary_row, column=10).number_format = '#,##0'
         ws.cell(row=summary_row, column=11, value=sum(r[9] or 0 for r in rows)).font = Font(bold=True)
         ws.cell(row=summary_row, column=11).number_format = '#,##0'
-        ws.cell(row=summary_row, column=12, value=sum(r[10] or 0 for r in rows)).font = Font(bold=True)
-        ws.cell(row=summary_row, column=12).number_format = '#,##0'
 
         output = io.BytesIO()
         wb.save(output)
