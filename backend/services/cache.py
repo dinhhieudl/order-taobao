@@ -28,11 +28,6 @@ async def sync_all():
         customer_map = {}
 
         for order in orders:
-            # Fix remaining: sheet formula often returns 0, so compute from price - deposit
-            remaining = order["remaining"]
-            if remaining == 0 and order["total_price"] > order["deposit"]:
-                remaining = order["total_price"] - order["deposit"]
-
             cursor = await db.execute(
                 """INSERT INTO orders (
                     sheet_type, row_start, row_end, customer_name, customer_phone,
@@ -46,7 +41,7 @@ async def sync_all():
                     order["customer_address"], order["source"],
                     order["tracking_cn"], order["tracking_vn"],
                     order["account"], order["note"],
-                    order["total_price"], order["deposit"], remaining,
+                    order["total_price"], order["deposit"], order["remaining"],
                     order["extra_fee"], order["status"],
                     order["loading_code"], order["waybill_code"],
                     order["order_date"], order["carrier"], order["carrier_code"],

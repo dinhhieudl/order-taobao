@@ -210,8 +210,8 @@ def _build_order_don(group: list, sheet_type: str, row_start: int) -> dict:
         "note": safe_str(main, 13),
         "total_price": safe_money(main, 14),
         "deposit": safe_money(main, 15),
-        "remaining": safe_money(main, 17),
-        "extra_fee": 0,  # No separate extra fee column; index 17 is debt/remaining
+        "remaining": safe_money(main, 16),
+        "extra_fee": 0,
         "status": safe_str(main, 18),
         "loading_code": safe_str(main, 19),
         "waybill_code": safe_str(main, 20),
@@ -284,8 +284,8 @@ def _build_order_don2(group: list, row_start: int) -> dict:
         "note": safe_str(main, 13),
         "total_price": safe_money(main, 14),
         "deposit": safe_money(main, 15),
-        "remaining": safe_money(main, 17),
-        "extra_fee": 0,  # No separate extra fee column; index 17 is debt/remaining
+        "remaining": safe_money(main, 16),
+        "extra_fee": 0,
         "status": safe_str(main, 18),
         "loading_code": "",
         "waybill_code": "",
