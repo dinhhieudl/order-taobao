@@ -59,7 +59,14 @@
             <span class="text-xs text-blue-700">Tự động mỗi 5 phút</span>
         </label>
         <button hx-post="/api/sync" hx-target="#sync-status-inline" hx-swap="innerHTML"
-            class="px-3 py-1 bg-blue-600 text-white rounded-lg text-xs hover:bg-blue-700">
+            hx-indicator="#sync-spinner-inline"
+            class="px-3 py-1 bg-blue-600 text-white rounded-lg text-xs hover:bg-blue-700 flex items-center gap-1.5">
+            <span id="sync-spinner-inline" class="htmx-indicator">
+                <svg class="animate-spin h-3.5 w-3.5 text-white" fill="none" viewBox="0 0 24 24">
+                    <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+                    <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"></path>
+                </svg>
+            </span>
             Đồng bộ ngay
         </button>
         <span id="sync-status-inline" class="ml-2"></span>
@@ -301,6 +308,7 @@ async function loadDashboardCharts() {
                             <th class="px-2 py-2 text-left text-amber-700">Sản phẩm</th>
                             <th class="px-2 py-2 text-left text-amber-700">Ngày</th>
                             <th class="px-2 py-2 text-left text-amber-700">Sheet</th>
+                            <th class="px-2 py-2 text-left text-amber-700">Trạng thái</th>
                         </tr>
                     </thead>
                     <tbody class="divide-y divide-amber-100">`;
@@ -315,6 +323,7 @@ async function loadDashboardCharts() {
                         <td class="px-2 py-1.5">
                             <span class="px-1.5 py-0.5 rounded text-[10px] ${a.sheet === 'DON' ? 'bg-blue-100 text-blue-700' : 'bg-purple-100 text-purple-700'}">${a.sheet}</span>
                         </td>
+                        <td class="px-2 py-1.5 text-gray-500 max-w-[80px] truncate">${a.status || 'Chưa có'}</td>
                     </tr>`;
             });
 

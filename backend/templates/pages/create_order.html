@@ -82,11 +82,11 @@
                 <input type="text" name="customer_phone" id="customer_phone"
                     class="w-full px-3 py-2 pr-8 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500"
                     hx-get="/api/search-customer"
-                    hx-trigger="input changed delay:300ms"
+                    hx-trigger="input changed delay:500ms"
                     hx-target="#customer-dropdown"
                     hx-swap="innerHTML"
                     hx-indicator="#cust-spinner"
-                    oninput="this.value=this.value.replace(/\s/g,''); loadCustomerHistory(this.value)">
+                    oninput="this.value=this.value.replace(/\s/g,''); if(!this._filling) loadCustomerHistory(this.value)">
                 <span id="cust-spinner" class="htmx-indicator absolute right-3 top-2.5">
                     <svg class="animate-spin h-4 w-4 text-gray-400" fill="none" viewBox="0 0 24 24">
                         <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>

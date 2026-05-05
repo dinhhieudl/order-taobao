@@ -7,6 +7,7 @@ from ..models.database import get_db
 from ..config import DON_RATE_PER_KG, DON_RATE_PER_M3, DON2_RATE_PER_KG
 from datetime import datetime, timedelta
 import re
+from unidecode import unidecode
 
 router = APIRouter(tags=["pages"])
 
@@ -74,6 +75,9 @@ async def search_page(request: Request, q: str = Query("", alias="q")):
             q_clean = re.sub(r'\s+', '', q)
             like = f"%{q}%"
             like_clean = f"%{q_clean}%"
+            # Also search with unidecoded (diacritics-free) version
+            q_ascii = unidecode(q)
+            like_ascii = f"%{q_ascii}%"
 
             # Support search by last 4-10 digits of phone number
             phone_tail_conditions = ""
@@ -93,6 +97,20 @@ async def search_page(request: Request, q: str = Query("", alias="q")):
                 LIMIT 50""",
                 [like_clean, like, like, like] + phone_params
             )
+
+            # If no results with original query, try diacritics-free search
+            if not results and q_ascii != q:
+                results = await db.execute_fetchall(
+                    f"""SELECT o.*, GROUP_CONCAT(oi.product_name, ' | ') as products
+                    FROM orders o
+                    LEFT JOIN order_items oi ON oi.order_id = o.id
+                    WHERE o.customer_phone LIKE ? OR o.customer_name LIKE ?
+                        OR o.tracking_cn LIKE ? OR o.tracking_vn LIKE ?{phone_tail_conditions}
+                    GROUP BY o.id
+                    ORDER BY o.row_start DESC
+                    LIMIT 50""",
+                    [like_clean, like_ascii, like, like] + phone_params
+                )
 
         return templates.TemplateResponse("pages/search.html", {
             "request": request,
@@ -235,35 +253,47 @@ async def debt_page(request: Request, q: str = Query("", alias="q")):
         await db.close()
 
 @router.get("/bao-cao", response_class=HTMLResponse)
-async def report_page(request: Request):
+async def report_page(
+    request: Request,
+    month: int = Query(0, alias="month"),
+    year: int = Query(0, alias="year"),
+):
     db = await get_db()
     try:
-        # Revenue by sheet type
+        # Default to current month/year
+        now = datetime.now()
+        if not month:
+            month = now.month
+        if not year:
+            year = now.year
+
+        # Revenue by sheet type (filtered by month)
+        # order_date is DD/MM format, so filter by month part
+        month_str = f"{month:02d}"
         by_sheet = await db.execute_fetchall(
             """SELECT sheet_type,
                 COUNT(*) as orders,
                 COALESCE(SUM(total_price),0) as revenue,
                 COALESCE(SUM(deposit),0) as collected,
                 COALESCE(SUM(remaining),0) as outstanding
-            FROM orders GROUP BY sheet_type"""
+            FROM orders
+            WHERE substr(order_date, 4, 2) = ?
+            GROUP BY sheet_type""",
+            (month_str,)
         )
 
-        # Revenue by date (last 30 days with data)
+        # Revenue by date (filtered by month)
         by_date = await db.execute_fetchall(
             """SELECT order_date,
                 COUNT(*) as orders,
                 COALESCE(SUM(total_price),0) as revenue
-            FROM orders WHERE order_date != ''
+            FROM orders WHERE order_date != '' AND substr(order_date, 4, 2) = ?
             GROUP BY order_date
-            ORDER BY
-                CASE
-                    WHEN order_date LIKE '__/__/____' THEN substr(order_date,7,4) || '-' || substr(order_date,4,2) || '-' || substr(order_date,1,2)
-                    ELSE order_date
-                END DESC
-            LIMIT 30"""
+            ORDER BY CAST(substr(order_date, 1, 2) AS INTEGER) DESC""",
+            (month_str,)
         )
 
-        # Shipping cost estimate
+        # Shipping cost estimate (filtered by month)
         shipping_don = await db.execute_fetchall(
             """SELECT COUNT(*),
                 COALESCE(SUM(
@@ -273,13 +303,28 @@ async def report_page(request: Request):
                     END
                 ), 0)
             FROM order_items oi JOIN orders o ON oi.order_id = o.id
-            WHERE o.sheet_type = 'DON' AND (weight > 0 OR volume > 0)"""
+            WHERE o.sheet_type = 'DON' AND (weight > 0 OR volume > 0)
+                AND substr(o.order_date, 4, 2) = ?""",
+            (month_str,)
         )
 
         shipping_don2 = await db.execute_fetchall(
             """SELECT COUNT(*), COALESCE(SUM(weight * 28000), 0)
             FROM order_items oi JOIN orders o ON oi.order_id = o.id
-            WHERE o.sheet_type = 'Don2' AND weight > 0"""
+            WHERE o.sheet_type = 'Don2' AND weight > 0
+                AND substr(o.order_date, 4, 2) = ?""",
+            (month_str,)
+        )
+
+        # Monthly totals
+        monthly_totals = await db.execute_fetchall(
+            """SELECT COUNT(*) as orders,
+                COALESCE(SUM(total_price),0) as revenue,
+                COALESCE(SUM(deposit),0) as collected,
+                COALESCE(SUM(remaining),0) as outstanding
+            FROM orders
+            WHERE substr(order_date, 4, 2) = ?""",
+            (month_str,)
         )
 
         return templates.TemplateResponse("pages/report.html", {
@@ -288,6 +333,9 @@ async def report_page(request: Request):
             "by_date": by_date,
             "shipping_don": shipping_don[0] if shipping_don else (0,0),
             "shipping_don2": shipping_don2[0] if shipping_don2 else (0,0),
+            "current_month": month,
+            "current_year": year,
+            "monthly_totals": monthly_totals[0] if monthly_totals else (0,0,0,0),
         })
     finally:
         await db.close()

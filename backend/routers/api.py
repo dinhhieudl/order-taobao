@@ -13,6 +13,7 @@ import os
 import shutil
 import io
 from datetime import datetime, timedelta
+from unidecode import unidecode
 
 router = APIRouter(tags=["api"])
 
@@ -31,7 +32,7 @@ def js_escape(s: str) -> str:
         .replace(">", "&gt;"))
 
 @router.post("/sync")
-async def sync_data(user: str = Depends(verify_user)):
+async def sync_data():
     """Sync from Google Sheets to local cache."""
     try:
         count = await sync_all()
@@ -63,6 +64,7 @@ async def search_customer(q: str = Query("", alias="q")):
     db = await get_db()
     try:
         q_clean = q.replace(" ", "")
+        q_ascii = unidecode(q)
         results = await db.execute_fetchall(
             """SELECT customer_name, customer_phone, customer_address,
                 COUNT(*) as order_count
@@ -73,6 +75,19 @@ async def search_customer(q: str = Query("", alias="q")):
             LIMIT 10""",
             (f"%{q_clean}%", f"%{q}%")
         )
+
+        # If no results, try diacritics-free search
+        if not results and q_ascii != q:
+            results = await db.execute_fetchall(
+                """SELECT customer_name, customer_phone, customer_address,
+                    COUNT(*) as order_count
+                FROM orders
+                WHERE customer_phone LIKE ? OR customer_name LIKE ?
+                GROUP BY customer_phone
+                ORDER BY order_count DESC
+                LIMIT 10""",
+                (f"%{q_clean}%", f"%{q_ascii}%")
+            )
 
         if not results:
             return HTMLResponse("")
@@ -397,21 +412,21 @@ async def dashboard_data():
             LIMIT 10"""
         )
 
-        # Shipping alerts: TQ tracking > 7 days, no VN tracking
-        seven_days_ago = (datetime.now() - timedelta(days=7)).strftime("%Y-%m-%d")
+        # Shipping alerts: TQ tracking exists, no VN tracking, status not yet "Nhập kho TQ"
+        # Shows orders that may be stuck in transit — user reviews order_date manually
         shipping_alerts = await db.execute_fetchall(
             """SELECT o.id, o.customer_name, o.customer_phone, o.tracking_cn,
-                o.order_date, o.sheet_type, o.last_sync,
+                o.order_date, o.sheet_type, o.status,
                 GROUP_CONCAT(oi.product_name, ' | ') as products
             FROM orders o
             LEFT JOIN order_items oi ON oi.order_id = o.id
             WHERE o.tracking_cn != '' AND o.tracking_cn IS NOT NULL
                 AND (o.tracking_vn IS NULL OR o.tracking_vn = '')
-                AND o.last_sync < ?
+                AND (o.status IS NULL OR o.status = '' OR o.status NOT LIKE '%Nhập kho TQ%')
+                AND o.order_date != ''
             GROUP BY o.id
-            ORDER BY o.last_sync ASC
-            LIMIT 50""",
-            (seven_days_ago,)
+            ORDER BY o.order_date ASC
+            LIMIT 50"""
         )
 
         # Overall stats
@@ -429,7 +444,7 @@ async def dashboard_data():
             "top_debt": [{"name": r[0], "phone": r[1], "debt": r[2], "count": r[3]} for r in top_debt],
             "shipping_alerts": [
                 {"id": r[0], "name": r[1], "phone": r[2], "tracking_cn": r[3],
-                 "date": r[4], "sheet": r[5], "synced": r[6], "products": r[7]}
+                 "date": r[4], "sheet": r[5], "status": r[6], "products": r[7]}
                 for r in shipping_alerts
             ],
             "stats": {

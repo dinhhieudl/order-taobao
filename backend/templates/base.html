@@ -127,7 +127,11 @@
             const phoneEl = document.getElementById('customer_phone');
             const addrEl = document.getElementById('customer_address');
             if (nameEl) nameEl.value = name;
-            if (phoneEl) phoneEl.value = phone;
+            if (phoneEl) {
+                phoneEl._filling = true;
+                phoneEl.value = phone;
+                setTimeout(() => { phoneEl._filling = false; }, 600);
+            }
             if (addrEl) addrEl.value = address;
             // Hide dropdown
             document.getElementById('customer-dropdown')?.remove();

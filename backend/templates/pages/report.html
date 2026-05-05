@@ -3,10 +3,54 @@
 {% block page_title %}📈 Báo cáo{% endblock %}
 
 {% block content %}
+<!-- Month/Year Selector -->
+<div class="bg-white rounded-xl border border-gray-200 shadow-sm p-4 mb-6">
+    <div class="flex items-center justify-between flex-wrap gap-4">
+        <h3 class="font-semibold text-gray-800">📅 Báo cáo theo tháng</h3>
+        <div class="flex items-center gap-3">
+            <select id="month-select" onchange="updateReport()"
+                class="px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-primary-500">
+                {% for m in range(1, 13) %}
+                <option value="{{ m }}" {% if m == current_month %}selected{% endif %}>
+                    Tháng {{ m }}
+                </option>
+                {% endfor %}
+            </select>
+            <select id="year-select" onchange="updateReport()"
+                class="px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-primary-500">
+                {% for y in range(2024, 2028) %}
+                <option value="{{ y }}" {% if y == current_year %}selected{% endif %}>{{ y }}</option>
+                {% endfor %}
+            </select>
+        </div>
+    </div>
+</div>
+
+<!-- Monthly Summary -->
+<div class="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
+    <div class="bg-white rounded-xl p-4 border border-gray-200 shadow-sm">
+        <div class="text-xs text-gray-500">Tổng đơn</div>
+        <div class="text-2xl font-bold text-gray-900 mt-1">{{ monthly_totals[0] }}</div>
+    </div>
+    <div class="bg-white rounded-xl p-4 border border-gray-200 shadow-sm">
+        <div class="text-xs text-gray-500">Doanh thu</div>
+        <div class="text-2xl font-bold text-gray-900 mt-1">{{ "{:,.0f}".format(monthly_totals[1]) }}</div>
+    </div>
+    <div class="bg-white rounded-xl p-4 border border-gray-200 shadow-sm">
+        <div class="text-xs text-gray-500">Đã thu</div>
+        <div class="text-2xl font-bold text-green-600 mt-1">{{ "{:,.0f}".format(monthly_totals[2]) }}</div>
+    </div>
+    <div class="bg-white rounded-xl p-4 border border-red-200 shadow-sm">
+        <div class="text-xs text-gray-500">Còn nợ</div>
+        <div class="text-2xl font-bold text-red-600 mt-1">{{ "{:,.0f}".format(monthly_totals[3]) }}</div>
+    </div>
+</div>
+
 <!-- By Sheet Type -->
 <div class="grid md:grid-cols-2 gap-6 mb-6">
     <div class="bg-white rounded-xl border border-gray-200 shadow-sm p-5">
         <h3 class="font-semibold text-gray-800 mb-4">📊 Theo loại đơn</h3>
+        {% if by_sheet %}
         <table class="w-full text-sm">
             <thead class="bg-gray-50">
                 <tr>
@@ -33,6 +77,9 @@
                 {% endfor %}
             </tbody>
         </table>
+        {% else %}
+        <div class="text-center py-8 text-gray-400">Không có dữ liệu trong tháng này</div>
+        {% endif %}
     </div>
 
     <!-- Shipping cost -->
@@ -60,6 +107,7 @@
 <!-- By Date -->
 <div class="bg-white rounded-xl border border-gray-200 shadow-sm p-5">
     <h3 class="font-semibold text-gray-800 mb-4">📅 Doanh thu theo ngày</h3>
+    {% if by_date %}
     <div class="overflow-x-auto">
         <table class="w-full text-sm">
             <thead class="bg-gray-50">
@@ -80,5 +128,16 @@
             </tbody>
         </table>
     </div>
+    {% else %}
+    <div class="text-center py-8 text-gray-400">Không có dữ liệu trong tháng này</div>
+    {% endif %}
 </div>
+
+<script>
+function updateReport() {
+    const month = document.getElementById('month-select').value;
+    const year = document.getElementById('year-select').value;
+    window.location.href = `/bao-cao?month=${month}&year=${year}`;
+}
+</script>
 {% endblock %}
