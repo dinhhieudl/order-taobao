@@ -308,8 +308,25 @@ def read_all_orders() -> list:
 
     return don_orders + don2_orders
 
+def _find_last_data_row(ws, product_col: int) -> int:
+    """Find the last row number (1-based) that has content in the product column.
+    
+    Scans from bottom up using col_values() to handle sparse columns.
+    Returns 1 if no data found (will insert at row 2, right after header).
+    """
+    col_vals = ws.col_values(product_col)
+    for i in range(len(col_vals) - 1, -1, -1):
+        if col_vals[i] and col_vals[i].strip():
+            return i + 1  # Convert 0-based to 1-based row number
+    return 1  # Header only, insert at row 2
+
+
 def append_order_to_sheet(sheet_type: str, order_data: dict):
-    """Append a new order to the appropriate sheet.
+    """Insert a new order after the last row with product data.
+    
+    Uses insert_rows() instead of append_row() to place data right after
+    the last row that has content in the product column. This preserves
+    any formulas, formatting, or data in columns of rows below.
     
     Note: 'remaining' (hàng về tt) is intentionally left empty to preserve
     the sheet's existing formula. The sheet calculates remaining automatically
@@ -323,7 +340,12 @@ def append_order_to_sheet(sheet_type: str, order_data: dict):
         # KHỐI LƯỢNG(H), KÍCH THƯỚC(I), Vận đơn TQ(J), Vận đơn VN(K), ACC(L), (M), NOTE(N),
         # GIÁ(O), CỌC(P), hàng về tt(Q), extra(R), Trạng Thái(S), Mã bốc(T), Mã vận đơn(U),
         # Cân nặng(V), Thể tích(W)
-        # Note: append_row skips column A, element[0] → col B
+        # SẢN PHẨM = column G = col index 7 (1-based)
+        product_col = 7
+        last_data_row = _find_last_data_row(ws, product_col)
+        insert_at = last_data_row + 1
+
+        # Note: row starts from col B (col A = stt is auto/empty)
         row = [
             order_data.get("order_date", ""),
             order_data.get("customer_name", ""),
@@ -348,9 +370,14 @@ def append_order_to_sheet(sheet_type: str, order_data: dict):
             "",  # cân nặng
             "",  # thể tích
         ]
-        ws.append_row(row, value_input_option="USER_ENTERED")
+        ws.insert_rows([row], row=insert_at, value_input_option="USER_ENTERED")
     else:
         ws = sh.worksheet(SHEET_DON2)
+        # Don2: SẢN PHẨM = column F = col index 6 (1-based)
+        product_col = 6
+        last_data_row = _find_last_data_row(ws, product_col)
+        insert_at = last_data_row + 1
+
         row = [
             order_data.get("order_date", ""),
             order_data.get("customer_name", ""),
@@ -374,6 +401,6 @@ def append_order_to_sheet(sheet_type: str, order_data: dict):
             "",  # shipping fee manual
             "",  # revenue
         ]
-        ws.append_row(row, value_input_option="USER_ENTERED")
+        ws.insert_rows([row], row=insert_at, value_input_option="USER_ENTERED")
 
     return True
