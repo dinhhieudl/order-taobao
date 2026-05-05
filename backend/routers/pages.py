@@ -105,31 +105,24 @@ async def search_page(request: Request, q: str = Query("", alias="q"), activity:
                 )
 
         elif q.strip():
-            q_clean = re.sub(r'\s+', '', q)
-            like = f"%{q}%"
-            like_clean = f"%{q_clean}%"
-            # Also search with unidecoded (diacritics-free) version
-            q_ascii = unidecode(q)
-            like_ascii = f"%{q_ascii}%"
-
-            # Support search by last 4-10 digits of phone number
-            phone_tail_conditions = ""
-            phone_params = []
-            if q_clean.isdigit() and 4 <= len(q_clean) <= 10:
-                phone_tail_conditions = " OR o.customer_phone LIKE ?"
-                phone_params = [f"%{q_clean}"]
+            q_clean = re.sub(r'\s+', '', q)       # "0912 345 678" → "0912345678"
+            q_lower = q.strip().lower()
+            like_phone = f"%{q_clean}%"
+            like_name_orig = f"%{q_lower}%"
+            q_ascii = unidecode(q).strip().lower()
+            like_name_ascii = f"%{q_ascii}%"
 
             # Build activity filter subquery for customer phones
-            activity_filter = ""
+            activity_filter_sql = ""
             if activity == "active":
-                activity_filter = """ AND o.customer_phone IN (
+                activity_filter_sql = """ AND o.customer_phone IN (
                     SELECT customer_phone FROM orders WHERE customer_phone != ''
                     GROUP BY customer_phone
                     HAVING substr(MAX(order_date),4,2)||'/'||substr(MAX(order_date),1,2)
                         >= substr(date('now'),6,2)||'/'||substr(date('now'),9,2)
                 )"""
             elif activity == "inactive":
-                activity_filter = """ AND o.customer_phone IN (
+                activity_filter_sql = """ AND o.customer_phone IN (
                     SELECT customer_phone FROM orders WHERE customer_phone != ''
                     GROUP BY customer_phone
                     HAVING MAX(order_date) = '' OR MAX(order_date) IS NULL
@@ -137,30 +130,37 @@ async def search_page(request: Request, q: str = Query("", alias="q"), activity:
                            < substr(date('now'),6,2)||'/'||substr(date('now'),9,2)
                 )"""
 
-            results = await db.execute_fetchall(
-                f"""SELECT o.*, GROUP_CONCAT(oi.product_name, ' | ') as products
-                FROM orders o
-                LEFT JOIN order_items oi ON oi.order_id = o.id
-                WHERE (o.customer_phone LIKE ? OR o.customer_name LIKE ?
-                    OR o.tracking_cn LIKE ? OR o.tracking_vn LIKE ?{phone_tail_conditions}){activity_filter}
-                GROUP BY o.id
-                ORDER BY o.row_start DESC
-                LIMIT 50""",
-                [like_clean, like, like, like] + phone_params
-            )
-
-            # If no results with original query, try diacritics-free search
-            if not results and q_ascii != q:
+            # Search: phone (digits, no spaces), name (case-insensitive, with & without diacritics), tracking
+            # SQLite lacks unidecode, so we UNION original and ASCII name matches in Python
+            if q_ascii == q_lower:
+                # ASCII-only query — single pass is enough
                 results = await db.execute_fetchall(
                     f"""SELECT o.*, GROUP_CONCAT(oi.product_name, ' | ') as products
                     FROM orders o
                     LEFT JOIN order_items oi ON oi.order_id = o.id
-                    WHERE (o.customer_phone LIKE ? OR o.customer_name LIKE ?
-                        OR o.tracking_cn LIKE ? OR o.tracking_vn LIKE ?{phone_tail_conditions}){activity_filter}
+                    WHERE (o.customer_phone LIKE ?
+                        OR LOWER(o.customer_name) LIKE ?
+                        OR o.tracking_cn LIKE ? OR o.tracking_vn LIKE ?){activity_filter_sql}
                     GROUP BY o.id
                     ORDER BY o.row_start DESC
                     LIMIT 50""",
-                    [like_clean, like_ascii, like, like] + phone_params
+                    [like_phone, like_name_orig, f"%{q.strip()}%", f"%{q.strip()}%"]
+                )
+            else:
+                # Vietnamese query — combine original + ASCII name matches via UNION
+                base_sql = f"""SELECT o.*, GROUP_CONCAT(oi.product_name, ' | ') as products
+                    FROM orders o
+                    LEFT JOIN order_items oi ON oi.order_id = o.id
+                    WHERE (o.customer_phone LIKE ?
+                        OR LOWER(o.customer_name) LIKE ?
+                        OR o.tracking_cn LIKE ? OR o.tracking_vn LIKE ?){activity_filter_sql}
+                    GROUP BY o.id"""
+                results = await db.execute_fetchall(
+                    f"""{base_sql} UNION {base_sql}
+                    ORDER BY row_start DESC
+                    LIMIT 50""",
+                    [like_phone, like_name_orig, f"%{q.strip()}%", f"%{q.strip()}%",
+                     like_phone, like_name_ascii, f"%{q.strip()}%", f"%{q.strip()}%"]
                 )
 
         return templates.TemplateResponse("pages/search.html", {

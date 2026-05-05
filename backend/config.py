@@ -21,7 +21,7 @@ CACHE_DB = DATA_DIR / "cache.db"
 
 # Server
 HOST = os.getenv("HOST", "0.0.0.0")
-PORT = int(os.getenv("PORT", "8000"))
+PORT = int(os.getenv("PORT", "9090"))
 
 # Tracking APIs (optional)
 GHN_TOKEN = os.getenv("GHN_TOKEN", "")

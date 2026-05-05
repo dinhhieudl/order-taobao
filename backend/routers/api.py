@@ -64,29 +64,39 @@ async def search_customer(q: str = Query("", alias="q")):
     db = await get_db()
     try:
         q_clean = q.replace(" ", "")
-        q_ascii = unidecode(q)
-        results = await db.execute_fetchall(
-            """SELECT customer_name, customer_phone, customer_address,
-                COUNT(*) as order_count
-            FROM orders
-            WHERE customer_phone LIKE ? OR customer_name LIKE ?
-            GROUP BY customer_phone
-            ORDER BY order_count DESC
-            LIMIT 10""",
-            (f"%{q_clean}%", f"%{q}%")
-        )
+        q_lower = q.strip().lower()
+        q_ascii = unidecode(q).strip().lower()
 
-        # If no results, try diacritics-free search
-        if not results and q_ascii != q:
+        if q_ascii == q_lower:
             results = await db.execute_fetchall(
                 """SELECT customer_name, customer_phone, customer_address,
                     COUNT(*) as order_count
                 FROM orders
-                WHERE customer_phone LIKE ? OR customer_name LIKE ?
+                WHERE customer_phone LIKE ? OR LOWER(customer_name) LIKE ?
                 GROUP BY customer_phone
                 ORDER BY order_count DESC
                 LIMIT 10""",
-                (f"%{q_clean}%", f"%{q_ascii}%")
+                (f"%{q_clean}%", f"%{q_lower}%")
+            )
+        else:
+            results = await db.execute_fetchall(
+                """SELECT * FROM (
+                    SELECT customer_name, customer_phone, customer_address,
+                        COUNT(*) as order_count
+                    FROM orders
+                    WHERE customer_phone LIKE ? OR LOWER(customer_name) LIKE ?
+                    GROUP BY customer_phone
+                    UNION
+                    SELECT customer_name, customer_phone, customer_address,
+                        COUNT(*) as order_count
+                    FROM orders
+                    WHERE customer_phone LIKE ? OR LOWER(customer_name) LIKE ?
+                    GROUP BY customer_phone
+                )
+                ORDER BY order_count DESC
+                LIMIT 10""",
+                (f"%{q_clean}%", f"%{q_lower}%",
+                 f"%{q_clean}%", f"%{q_ascii}%")
             )
 
         if not results:
