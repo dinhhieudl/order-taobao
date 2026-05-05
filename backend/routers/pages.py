@@ -40,14 +40,14 @@ async def dashboard(request: Request):
             "SELECT * FROM orders ORDER BY row_start DESC LIMIT 10"
         )
 
-        # Top customers by order count
+        # Top customers by debt (remaining > 0)
         top_customers = await db.execute_fetchall(
             """SELECT customer_name, customer_phone, COUNT(*) as cnt,
                 COALESCE(SUM(total_price),0) as total,
                 COALESCE(SUM(remaining),0) as debt
-            FROM orders WHERE customer_name != ''
+            FROM orders WHERE customer_name != '' AND remaining > 0
             GROUP BY customer_phone
-            ORDER BY cnt DESC LIMIT 10"""
+            ORDER BY debt DESC LIMIT 10"""
         )
 
         return templates.TemplateResponse("pages/dashboard.html", {
@@ -67,11 +67,44 @@ async def dashboard(request: Request):
 from ..main import templates
 
 @router.get("/tim-kiem", response_class=HTMLResponse)
-async def search_page(request: Request, q: str = Query("", alias="q")):
+async def search_page(request: Request, q: str = Query("", alias="q"), activity: str = Query("", alias="activity")):
     db = await get_db()
     try:
         results = []
-        if q.strip():
+
+        # Activity filter: find customers by their most recent order date
+        # Note: order_date is DD/MM format (no year), so we convert to MM/DD for comparison
+        # and use date('now') for current month/day reference
+        if activity and not q.strip():
+            # Subquery to find customer phones matching activity filter
+            if activity == "active":
+                phone_subq = """SELECT customer_phone FROM orders
+                    WHERE customer_name != '' AND customer_phone != ''
+                    GROUP BY customer_phone
+                    HAVING substr(MAX(order_date),4,2)||'/'||substr(MAX(order_date),1,2)
+                        >= substr(date('now'),6,2)||'/'||substr(date('now'),9,2)"""
+            elif activity == "inactive":
+                phone_subq = """SELECT customer_phone FROM orders
+                    WHERE customer_name != '' AND customer_phone != ''
+                    GROUP BY customer_phone
+                    HAVING MAX(order_date) = '' OR MAX(order_date) IS NULL
+                        OR substr(MAX(order_date),4,2)||'/'||substr(MAX(order_date),1,2)
+                           < substr(date('now'),6,2)||'/'||substr(date('now'),9,2)"""
+            else:
+                phone_subq = None
+
+            if phone_subq:
+                results = await db.execute_fetchall(
+                    f"""SELECT o.*, GROUP_CONCAT(oi.product_name, ' | ') as products
+                    FROM orders o
+                    LEFT JOIN order_items oi ON oi.order_id = o.id
+                    WHERE o.customer_phone IN ({phone_subq})
+                    GROUP BY o.id
+                    ORDER BY o.row_start DESC
+                    LIMIT 50"""
+                )
+
+        elif q.strip():
             q_clean = re.sub(r'\s+', '', q)
             like = f"%{q}%"
             like_clean = f"%{q_clean}%"
@@ -86,12 +119,30 @@ async def search_page(request: Request, q: str = Query("", alias="q")):
                 phone_tail_conditions = " OR o.customer_phone LIKE ?"
                 phone_params = [f"%{q_clean}"]
 
+            # Build activity filter subquery for customer phones
+            activity_filter = ""
+            if activity == "active":
+                activity_filter = """ AND o.customer_phone IN (
+                    SELECT customer_phone FROM orders WHERE customer_phone != ''
+                    GROUP BY customer_phone
+                    HAVING substr(MAX(order_date),4,2)||'/'||substr(MAX(order_date),1,2)
+                        >= substr(date('now'),6,2)||'/'||substr(date('now'),9,2)
+                )"""
+            elif activity == "inactive":
+                activity_filter = """ AND o.customer_phone IN (
+                    SELECT customer_phone FROM orders WHERE customer_phone != ''
+                    GROUP BY customer_phone
+                    HAVING MAX(order_date) = '' OR MAX(order_date) IS NULL
+                        OR substr(MAX(order_date),4,2)||'/'||substr(MAX(order_date),1,2)
+                           < substr(date('now'),6,2)||'/'||substr(date('now'),9,2)
+                )"""
+
             results = await db.execute_fetchall(
                 f"""SELECT o.*, GROUP_CONCAT(oi.product_name, ' | ') as products
                 FROM orders o
                 LEFT JOIN order_items oi ON oi.order_id = o.id
-                WHERE o.customer_phone LIKE ? OR o.customer_name LIKE ?
-                    OR o.tracking_cn LIKE ? OR o.tracking_vn LIKE ?{phone_tail_conditions}
+                WHERE (o.customer_phone LIKE ? OR o.customer_name LIKE ?
+                    OR o.tracking_cn LIKE ? OR o.tracking_vn LIKE ?{phone_tail_conditions}){activity_filter}
                 GROUP BY o.id
                 ORDER BY o.row_start DESC
                 LIMIT 50""",
@@ -104,8 +155,8 @@ async def search_page(request: Request, q: str = Query("", alias="q")):
                     f"""SELECT o.*, GROUP_CONCAT(oi.product_name, ' | ') as products
                     FROM orders o
                     LEFT JOIN order_items oi ON oi.order_id = o.id
-                    WHERE o.customer_phone LIKE ? OR o.customer_name LIKE ?
-                        OR o.tracking_cn LIKE ? OR o.tracking_vn LIKE ?{phone_tail_conditions}
+                    WHERE (o.customer_phone LIKE ? OR o.customer_name LIKE ?
+                        OR o.tracking_cn LIKE ? OR o.tracking_vn LIKE ?{phone_tail_conditions}){activity_filter}
                     GROUP BY o.id
                     ORDER BY o.row_start DESC
                     LIMIT 50""",
@@ -116,6 +167,7 @@ async def search_page(request: Request, q: str = Query("", alias="q")):
             "request": request,
             "query": q,
             "results": results,
+            "activity_filter": activity,
         })
     finally:
         await db.close()
@@ -184,35 +236,51 @@ async def order_list(
 
 @router.get("/don-hang/{order_id}", response_class=HTMLResponse)
 async def order_detail(request: Request, order_id: int):
-    db = await get_db()
     try:
-        order = await db.execute_fetchall("SELECT * FROM orders WHERE id = ?", (order_id,))
-        if not order:
-            return HTMLResponse("<div class='p-4 text-red-500'>Không tìm thấy đơn hàng</div>", status_code=404)
+        db = await get_db()
+        try:
+            order = await db.execute_fetchall("SELECT * FROM orders WHERE id = ?", (order_id,))
+            if not order:
+                return HTMLResponse("<div class='p-4 text-red-500'>Không tìm thấy đơn hàng</div>", status_code=404)
 
-        items = await db.execute_fetchall(
-            "SELECT * FROM order_items WHERE order_id = ?", (order_id,)
-        )
+            items = await db.execute_fetchall(
+                "SELECT * FROM order_items WHERE order_id = ?", (order_id,)
+            )
 
-        # Customer history
-        phone = order[0][5]  # customer_phone
-        history = await db.execute_fetchall(
-            "SELECT * FROM orders WHERE customer_phone = ? AND id != ? ORDER BY row_start DESC LIMIT 20",
-            (phone, order_id)
-        )
+            # Customer history
+            phone = order[0][5]  # customer_phone
+            history = await db.execute_fetchall(
+                "SELECT * FROM orders WHERE customer_phone = ? AND id != ? ORDER BY row_start DESC LIMIT 20",
+                (phone, order_id)
+            )
 
-        # Tracking info
-        tracking_info = parse_tracking_info(order[0][8] or "")  # tracking_vn
+            # Tracking info
+            tracking_info = parse_tracking_info(order[0][8] or "")  # tracking_cn
 
-        return templates.TemplateResponse("pages/order_detail.html", {
-            "request": request,
-            "order": order[0],
-            "items": items,
-            "history": history,
-            "tracking": tracking_info,
-        })
-    finally:
-        await db.close()
+            return templates.TemplateResponse("pages/order_detail.html", {
+                "request": request,
+                "order": order[0],
+                "items": items,
+                "history": history,
+                "tracking": tracking_info,
+            })
+        finally:
+            await db.close()
+    except Exception as e:
+        return HTMLResponse(f"""
+        <div class="max-w-2xl mx-auto p-6">
+            <div class="bg-red-50 border border-red-200 rounded-lg p-4">
+                <div class="flex items-center gap-2 text-red-700 font-medium">
+                    <svg class="w-5 h-5" fill="currentColor" viewBox="0 0 20 20">
+                        <path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM8.707 7.293a1 1 0 00-1.414 1.414L8.586 10l-1.293 1.293a1 1 0 101.414 1.414L10 11.414l1.293 1.293a1 1 0 001.414-1.414L11.414 10l1.293-1.293a1 1 0 00-1.414-1.414L10 8.586 8.707 7.293z" clip-rule="evenodd"/>
+                    </svg>
+                    Lỗi hiển thị đơn hàng
+                </div>
+                <div class="text-sm text-red-600 mt-1">Chi tiết: {str(e)}</div>
+                <a href="/don-hang" class="inline-block mt-3 px-4 py-2 bg-red-600 text-white rounded-lg text-sm hover:bg-red-700">← Quay lại danh sách</a>
+            </div>
+        </div>
+        """, status_code=500)
 
 @router.get("/tao-don", response_class=HTMLResponse)
 async def create_order_page(request: Request):

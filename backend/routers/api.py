@@ -183,6 +183,81 @@ async def customer_history(phone: str = Query("", alias="phone")):
         await db.close()
 
 
+@router.get("/customer-debt-orders")
+async def customer_debt_orders(phone: str = Query("", alias="phone")):
+    """Get outstanding orders for a customer - used by dashboard debt list."""
+    if not phone:
+        return HTMLResponse('<div class="text-gray-400 text-sm p-3">Không có SĐT</div>')
+
+    db = await get_db()
+    try:
+        orders = await db.execute_fetchall(
+            """SELECT o.id, o.order_date, o.customer_name, o.sheet_type,
+                o.total_price, o.deposit, o.remaining, o.status,
+                o.tracking_cn, o.tracking_vn, o.loading_code,
+                GROUP_CONCAT(oi.product_name, ' | ') as products
+            FROM orders o
+            LEFT JOIN order_items oi ON oi.order_id = o.id
+            WHERE o.customer_phone = ? AND o.remaining > 0
+            GROUP BY o.id
+            ORDER BY o.remaining DESC""",
+            (phone,)
+        )
+
+        if not orders:
+            return HTMLResponse('<div class="text-gray-400 text-sm p-3">Không có đơn nợ</div>')
+
+        total_debt = sum((o[6] or 0) for o in orders)
+        rows = ""
+        for o in orders:
+            status_color = "green" if o[7] and ("hoàn" in o[7].lower() or "xong" in o[7].lower()) else "blue" if o[7] else "gray"
+            rows += f"""
+            <tr class="border-b border-gray-100 hover:bg-gray-50">
+                <td class="px-3 py-2 text-xs text-gray-500">{o[1] or ''}</td>
+                <td class="px-3 py-2 text-xs max-w-[150px] truncate" title="{o[11] or ''}">{o[11] or '-'}</td>
+                <td class="px-3 py-2 font-mono text-xs">{o[8] or '-'}</td>
+                <td class="px-3 py-2 font-mono text-xs">{o[10] or '-'}</td>
+                <td class="px-3 py-2">
+                    <span class="px-1.5 py-0.5 rounded text-[10px] bg-{status_color}-100 text-{status_color}-700">{o[7] or 'Chưa có'}</span>
+                </td>
+                <td class="px-3 py-2 text-right text-xs">{(o[4] or 0):,.0f} đ</td>
+                <td class="px-3 py-2 text-right text-xs text-green-600">{(o[5] or 0):,.0f} đ</td>
+                <td class="px-3 py-2 text-right text-xs text-red-600 font-medium">{(o[6] or 0):,.0f} đ</td>
+                <td class="px-3 py-2 text-center">
+                    <a href="/don-hang/{o[0]}" class="text-primary-600 hover:underline text-xs">Chi tiết →</a>
+                </td>
+            </tr>"""
+
+        return HTMLResponse(f"""
+        <div class="bg-blue-50 border border-blue-200 rounded-lg p-4">
+            <div class="flex items-center justify-between mb-3">
+                <h4 class="font-semibold text-blue-800">📋 Đơn chưa thanh toán — {orders[0][2]}</h4>
+                <span class="text-sm font-bold text-red-600">Tổng nợ: {total_debt:,.0f} đ</span>
+            </div>
+            <div class="overflow-x-auto">
+                <table class="w-full text-sm">
+                    <thead class="bg-blue-100">
+                        <tr>
+                            <th class="px-3 py-2 text-left text-xs font-medium text-blue-700">Ngày</th>
+                            <th class="px-3 py-2 text-left text-xs font-medium text-blue-700">Sản phẩm</th>
+                            <th class="px-3 py-2 text-left text-xs font-medium text-blue-700">VĐ TQ</th>
+                            <th class="px-3 py-2 text-left text-xs font-medium text-blue-700">Mã xếp</th>
+                            <th class="px-3 py-2 text-left text-xs font-medium text-blue-700">Trạng thái</th>
+                            <th class="px-3 py-2 text-right text-xs font-medium text-blue-700">Tổng giá</th>
+                            <th class="px-3 py-2 text-right text-xs font-medium text-blue-700">Đã cọc</th>
+                            <th class="px-3 py-2 text-right text-xs font-medium text-blue-700">Còn nợ</th>
+                            <th class="px-3 py-2 text-center text-xs font-medium text-blue-700"></th>
+                        </tr>
+                    </thead>
+                    <tbody>{rows}</tbody>
+                </table>
+            </div>
+        </div>
+        """)
+    finally:
+        await db.close()
+
+
 @router.get("/search-tracking")
 async def search_tracking(q: str = Query("", alias="q")):
     """Search by tracking number."""
@@ -271,12 +346,15 @@ async def create_order(
     customer_name: str = Form(...),
     customer_phone: str = Form(""),
     customer_address: str = Form(""),
-    product_name: str = Form(""),
+    product_name: list[str] = Form([]),
     note: str = Form(""),
     total_price: int = Form(0),
     deposit: int = Form(0),
 ):
     """Create new order and write to Google Sheets."""
+
+    # Concatenate multiple product names with " | " separator
+    product_str = " | ".join(p.strip() for p in product_name if p.strip()) if product_name else ""
 
     order_data = {
         "order_date": order_date or datetime.now().strftime("%d/%m"),
@@ -284,7 +362,7 @@ async def create_order(
         "customer_phone": customer_phone.replace(" ", ""),
         "customer_address": customer_address,
         "source": "",
-        "product_name": product_name,
+        "product_name": product_str,
         "weight": 0,
         "volume": 0,
         "tracking_cn": "",
