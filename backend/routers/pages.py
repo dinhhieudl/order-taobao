@@ -67,107 +67,42 @@ async def dashboard(request: Request):
 from ..main import templates
 
 @router.get("/tim-kiem", response_class=HTMLResponse)
-async def search_page(request: Request, q: str = Query("", alias="q"), activity: str = Query("", alias="activity")):
+async def search_page(request: Request, q: str = Query("", alias="q")):
     db = await get_db()
     try:
         results = []
 
-        # Activity filter: find customers by their most recent order date
-        # Note: order_date is DD/MM format (no year), so we convert to MM/DD for comparison
-        # and use date('now') for current month/day reference
-        if activity and not q.strip():
-            # Subquery to find customer phones matching activity filter
-            if activity == "active":
-                phone_subq = """SELECT customer_phone FROM orders
-                    WHERE customer_name != '' AND customer_phone != ''
-                    GROUP BY customer_phone
-                    HAVING substr(MAX(order_date),4,2)||'/'||substr(MAX(order_date),1,2)
-                        >= substr(date('now'),6,2)||'/'||substr(date('now'),9,2)"""
-            elif activity == "inactive":
-                phone_subq = """SELECT customer_phone FROM orders
-                    WHERE customer_name != '' AND customer_phone != ''
-                    GROUP BY customer_phone
-                    HAVING MAX(order_date) = '' OR MAX(order_date) IS NULL
-                        OR substr(MAX(order_date),4,2)||'/'||substr(MAX(order_date),1,2)
-                           < substr(date('now'),6,2)||'/'||substr(date('now'),9,2)"""
-            else:
-                phone_subq = None
-
-            if phone_subq:
-                results = await db.execute_fetchall(
-                    f"""SELECT o.*, GROUP_CONCAT(oi.product_name, ' | ') as products
-                    FROM orders o
-                    LEFT JOIN order_items oi ON oi.order_id = o.id
-                    WHERE o.customer_phone IN ({phone_subq})
-                    GROUP BY o.id
-                    ORDER BY o.row_start DESC
-                    LIMIT 50"""
-                )
-
-        elif q.strip():
+        if q.strip():
             q_clean = re.sub(r'\s+', '', q)       # "0912 345 678" → "0912345678"
-            q_lower = q.strip().lower()
-            like_phone = f"%{q_clean}%"
-            like_name_orig = f"%{q_lower}%"
             q_ascii = unidecode(q).strip().lower()
-            like_name_ascii = f"%{q_ascii}%"
+            q_words = q_ascii.split()
 
-            # Build activity filter subquery for customer phones
-            activity_filter_sql = ""
-            if activity == "active":
-                activity_filter_sql = """ AND o.customer_phone IN (
-                    SELECT customer_phone FROM orders WHERE customer_phone != ''
-                    GROUP BY customer_phone
-                    HAVING substr(MAX(order_date),4,2)||'/'||substr(MAX(order_date),1,2)
-                        >= substr(date('now'),6,2)||'/'||substr(date('now'),9,2)
-                )"""
-            elif activity == "inactive":
-                activity_filter_sql = """ AND o.customer_phone IN (
-                    SELECT customer_phone FROM orders WHERE customer_phone != ''
-                    GROUP BY customer_phone
-                    HAVING MAX(order_date) = '' OR MAX(order_date) IS NULL
-                        OR substr(MAX(order_date),4,2)||'/'||substr(MAX(order_date),1,2)
-                           < substr(date('now'),6,2)||'/'||substr(date('now'),9,2)
-                )"""
+            # Build name matching: each word must appear in customer_name_ascii
+            name_conditions = []
+            name_params = []
+            for word in q_words:
+                name_conditions.append("LOWER(o.customer_name_ascii) LIKE ?")
+                name_params.append(f"% {word} %")
 
-            # Search: phone (digits, no spaces), name (case-insensitive, with & without diacritics), tracking
-            # SQLite lacks unidecode, so we UNION original and ASCII name matches in Python
-            if q_ascii == q_lower:
-                # ASCII-only query — single pass is enough
-                results = await db.execute_fetchall(
-                    f"""SELECT o.*, GROUP_CONCAT(oi.product_name, ' | ') as products
-                    FROM orders o
-                    LEFT JOIN order_items oi ON oi.order_id = o.id
-                    WHERE (o.customer_phone LIKE ?
-                        OR LOWER(o.customer_name) LIKE ?
-                        OR o.tracking_cn LIKE ? OR o.tracking_vn LIKE ?){activity_filter_sql}
-                    GROUP BY o.id
-                    ORDER BY o.row_start DESC
-                    LIMIT 50""",
-                    [like_phone, like_name_orig, f"%{q.strip()}%", f"%{q.strip()}%"]
-                )
-            else:
-                # Vietnamese query — combine original + ASCII name matches via UNION
-                base_sql = f"""SELECT o.*, GROUP_CONCAT(oi.product_name, ' | ') as products
-                    FROM orders o
-                    LEFT JOIN order_items oi ON oi.order_id = o.id
-                    WHERE (o.customer_phone LIKE ?
-                        OR LOWER(o.customer_name) LIKE ?
-                        OR o.tracking_cn LIKE ? OR o.tracking_vn LIKE ?){activity_filter_sql}
-                    GROUP BY o.id"""
-                results = await db.execute_fetchall(
-                    f"""{base_sql} UNION {base_sql}
-                    ORDER BY row_start DESC
-                    LIMIT 50""",
-                    [like_phone, like_name_orig, f"%{q.strip()}%", f"%{q.strip()}%",
-                     like_phone, like_name_ascii, f"%{q.strip()}%", f"%{q.strip()}%"]
-                )
+            name_where = " AND ".join(name_conditions) if name_conditions else "1=0"
+
+            results = await db.execute_fetchall(
+                f"""SELECT o.*, GROUP_CONCAT(oi.product_name, ' | ') as products
+                FROM orders o
+                LEFT JOIN order_items oi ON oi.order_id = o.id
+                WHERE (o.customer_phone LIKE ?
+                    OR ({name_where})
+                    OR o.tracking_cn LIKE ? OR o.tracking_vn LIKE ?)
+                GROUP BY o.id
+                ORDER BY o.row_start DESC
+                LIMIT 50""",
+                [f"%{q_clean}%"] + name_params + [f"%{q.strip()}%", f"%{q.strip()}%"]
+            )
 
         return templates.TemplateResponse("pages/search.html", {
             "request": request,
             "query": q,
             "results": results,
-            "activity_filter": activity,
         })
     finally:
         await db.close()

@@ -57,47 +57,43 @@ async def sync_data():
 
 @router.get("/search-customer")
 async def search_customer(q: str = Query("", alias="q")):
-    """Quick customer search for form auto-fill."""
+    """Quick customer search for form auto-fill.
+    
+    Supports:
+    - Partial name: "van phuc" matches "Trần Văn Phúc"
+    - No-diacritics: "duc bang" matches "Đức Bằng"
+    - Phone: "0912" matches phone numbers containing "0912"
+    """
     if not q or len(q) < 2:
         return HTMLResponse("")
 
     db = await get_db()
     try:
         q_clean = q.replace(" ", "")
-        q_lower = q.strip().lower()
         q_ascii = unidecode(q).strip().lower()
+        q_words = q_ascii.split()
 
-        if q_ascii == q_lower:
-            results = await db.execute_fetchall(
-                """SELECT customer_name, customer_phone, customer_address,
-                    COUNT(*) as order_count
-                FROM orders
-                WHERE customer_phone LIKE ? OR LOWER(customer_name) LIKE ?
-                GROUP BY customer_phone
-                ORDER BY order_count DESC
-                LIMIT 10""",
-                (f"%{q_clean}%", f"%{q_lower}%")
-            )
-        else:
-            results = await db.execute_fetchall(
-                """SELECT * FROM (
-                    SELECT customer_name, customer_phone, customer_address,
-                        COUNT(*) as order_count
-                    FROM orders
-                    WHERE customer_phone LIKE ? OR LOWER(customer_name) LIKE ?
-                    GROUP BY customer_phone
-                    UNION
-                    SELECT customer_name, customer_phone, customer_address,
-                        COUNT(*) as order_count
-                    FROM orders
-                    WHERE customer_phone LIKE ? OR LOWER(customer_name) LIKE ?
-                    GROUP BY customer_phone
-                )
-                ORDER BY order_count DESC
-                LIMIT 10""",
-                (f"%{q_clean}%", f"%{q_lower}%",
-                 f"%{q_clean}%", f"%{q_ascii}%")
-            )
+        # Build name matching: each word must appear in customer_name_ascii
+        # Use word-boundary check: ' van ' must appear (not inside another word)
+        name_conditions = []
+        name_params = []
+        for word in q_words:
+            name_conditions.append("LOWER(customer_name_ascii) LIKE ?")
+            name_params.append(f"% {word} %")
+
+        name_where = " AND ".join(name_conditions) if name_conditions else "1=0"
+
+        results = await db.execute_fetchall(
+            f"""SELECT customer_name, customer_phone, customer_address,
+                COUNT(*) as order_count
+            FROM orders
+            WHERE customer_phone LIKE ?
+               OR ({name_where})
+            GROUP BY customer_phone
+            ORDER BY order_count DESC
+            LIMIT 10""",
+            [f"%{q_clean}%"] + name_params
+        )
 
         if not results:
             return HTMLResponse("")

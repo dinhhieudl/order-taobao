@@ -9,6 +9,7 @@ SCHEMA = """
 CREATE TABLE IF NOT EXISTS customers (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     name TEXT,
+    name_ascii TEXT,
     phone TEXT UNIQUE,
     address TEXT,
     sheet_type TEXT DEFAULT 'DON',
@@ -22,6 +23,7 @@ CREATE TABLE IF NOT EXISTS orders (
     row_start INTEGER NOT NULL,
     row_end INTEGER,
     customer_name TEXT,
+    customer_name_ascii TEXT,
     customer_phone TEXT,
     customer_address TEXT,
     source TEXT,
@@ -59,6 +61,7 @@ CREATE INDEX IF NOT EXISTS idx_customers_phone ON customers(phone);
 CREATE INDEX IF NOT EXISTS idx_customers_name ON customers(name);
 CREATE INDEX IF NOT EXISTS idx_orders_phone ON orders(customer_phone);
 CREATE INDEX IF NOT EXISTS idx_orders_name ON orders(customer_name);
+CREATE INDEX IF NOT EXISTS idx_orders_name_ascii ON orders(customer_name_ascii);
 CREATE INDEX IF NOT EXISTS idx_orders_tracking_cn ON orders(tracking_cn);
 CREATE INDEX IF NOT EXISTS idx_orders_tracking_vn ON orders(tracking_vn);
 CREATE INDEX IF NOT EXISTS idx_orders_status ON orders(status);

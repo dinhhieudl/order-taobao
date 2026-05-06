@@ -1,6 +1,7 @@
 """Sync Google Sheets data into local SQLite cache for fast search."""
 import json
 from datetime import datetime
+from unidecode import unidecode
 from .sheets import read_all_orders
 from ..models.database import get_db, init_db
 from ..config import DON_RATE_PER_KG, DON_RATE_PER_M3, DON2_RATE_PER_KG
@@ -28,16 +29,17 @@ async def sync_all():
         customer_map = {}
 
         for order in orders:
+            name_ascii = (" " + unidecode(order["customer_name"]).lower() + " ") if order["customer_name"] else ""
             cursor = await db.execute(
                 """INSERT INTO orders (
-                    sheet_type, row_start, row_end, customer_name, customer_phone,
+                    sheet_type, row_start, row_end, customer_name, customer_name_ascii, customer_phone,
                     customer_address, source, tracking_cn, tracking_vn, account,
                     note, total_price, deposit, remaining, extra_fee, status,
                     loading_code, waybill_code, order_date, carrier, carrier_code, last_sync
-                ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+                ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
                 (
                     order["sheet_type"], order["row_start"], order["row_end"],
-                    order["customer_name"], order["customer_phone"],
+                    order["customer_name"], name_ascii, order["customer_phone"],
                     order["customer_address"], order["source"],
                     order["tracking_cn"], order["tracking_vn"],
                     order["account"], order["note"],
@@ -78,9 +80,10 @@ async def sync_all():
 
         # Insert customers
         for c in customer_map.values():
+            name_ascii = (" " + unidecode(c["name"]).lower() + " ") if c["name"] else ""
             await db.execute(
-                "INSERT OR REPLACE INTO customers (name, phone, address, last_sync) VALUES (?,?,?,?)",
-                (c["name"], c["phone"], c["address"], now)
+                "INSERT OR REPLACE INTO customers (name, name_ascii, phone, address, last_sync) VALUES (?,?,?,?,?)",
+                (c["name"], name_ascii, c["phone"], c["address"], now)
             )
 
         await db.commit()

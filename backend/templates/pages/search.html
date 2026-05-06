@@ -8,16 +8,11 @@
         <input type="text" name="q" value="{{ query }}" placeholder="Nhập tên khách hoặc 4-10 số cuối SĐT..."
             class="flex-1 px-4 py-3 border border-gray-300 rounded-xl text-lg focus:ring-2 focus:ring-primary-500 focus:border-primary-500"
             autofocus>
-        <select name="activity" class="px-3 py-3 border border-gray-300 rounded-xl text-sm focus:ring-2 focus:ring-primary-500 bg-white">
-            <option value="" {% if not activity_filter %}selected{% endif %}>Tất cả</option>
-            <option value="active" {% if activity_filter == 'active' %}selected{% endif %}>Đang hoạt động</option>
-            <option value="inactive" {% if activity_filter == 'inactive' %}selected{% endif %}>Chưa hoạt động</option>
-        </select>
         <button type="submit" class="px-6 py-3 bg-primary-600 text-white rounded-xl hover:bg-primary-700 font-medium">
             Tìm
         </button>
     </form>
-    <p class="text-xs text-gray-400 mt-2 text-center">Hỗ trợ: tên khách, 4-10 số cuối SĐT, mã vận đơn TQ/VN • Lọc: Đang hoạt động (đơn trong 30 ngày) / Chưa hoạt động</p>
+    <p class="text-xs text-gray-400 mt-2 text-center">Hỗ trợ: tên khách (không dấu hoặc có dấu), 4-10 số cuối SĐT, mã vận đơn TQ/VN</p>
 </div>
 
 {% if query %}
