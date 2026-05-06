@@ -345,8 +345,13 @@ def append_order_to_sheet(sheet_type: str, order_data: dict):
         last_data_row = _find_last_data_row(ws, product_col)
         insert_at = last_data_row + 1
 
-        # Note: row starts from col B (col A = stt is auto/empty)
+        # Note: col A = stt is auto/empty, row starts from col B
+        # DON columns: stt(A), stt/ngày(B), Tên(C), SDT(D), Địa chỉ(E), NGUỒN(F), SẢN PHẨM(G),
+        # KHỐI LƯỢNG(H), KÍCH THƯỚC(I), Vận đơn TQ(J), Vận đơn VN(K), ACC(L), (M), NOTE(N),
+        # GIÁ(O), CỌC(P), hàng về tt(Q), extra(R), Trạng Thái(S), Mã bốc(T), Mã vận đơn(U),
+        # Cân nặng(V), Thể tích(W)
         row = [
+            "",  # A - stt (leave empty)
             order_data.get("order_date", ""),
             order_data.get("customer_name", ""),
             order_data.get("customer_phone", ""),
@@ -358,17 +363,17 @@ def append_order_to_sheet(sheet_type: str, order_data: dict):
             order_data.get("tracking_cn", ""),
             order_data.get("tracking_vn", ""),
             order_data.get("account", ""),
-            "",  # empty col
+            "",  # M - empty col
             order_data.get("note", ""),
             f"{order_data.get('total_price', 0):,.0f} đ" if order_data.get("total_price") else "",
             f"{order_data.get('deposit', 0):,.0f} đ" if order_data.get("deposit") else "",
-            "",  # hàng về tt - LEAVE EMPTY to preserve sheet formula
-            "",  # extra fee
+            "",  # Q - hàng về tt - LEAVE EMPTY to preserve sheet formula
+            "",  # R - extra fee
             order_data.get("status", ""),
-            "",  # mã bốc
-            "",  # mã vận đơn
-            "",  # cân nặng
-            "",  # thể tích
+            "",  # T - mã bốc
+            "",  # U - mã vận đơn
+            "",  # V - cân nặng
+            "",  # W - thể tích
         ]
         ws.insert_rows([row], row=insert_at, value_input_option="USER_ENTERED")
     else:
