@@ -160,7 +160,7 @@ async def customer_history(phone: str = Query("", alias="phone")):
                 <td class="px-2 py-1.5">
                     <a href="/don-hang/{o[0]}" class="text-xs text-primary-600 hover:underline">{o[10][:20] if o[10] else o[8][:15] if o[8] else '-'}</a>
                 </td>
-                <td class="px-2 py-1.5 text-xs max-w-[120px] truncate">{o[11] or ''}</td>
+                <td class="px-2 py-1.5 text-xs max-w-[120px] truncate">{o[10] or ''}</td>
                 <td class="px-2 py-1.5 text-xs text-right font-medium">{o[4]:,.0f} đ</td>
                 <td class="px-2 py-1.5">{status_badge}</td>
             </tr>"""
@@ -438,7 +438,9 @@ async def debt_summary(q: str = Query("", alias="q")):
     """Debt summary for HTMX."""
     db = await get_db()
     try:
+        q_ascii = unidecode(q).strip().lower() if q else ""
         like = f"%{q}%" if q else "%"
+        like_ascii = f"% {q_ascii} %" if q_ascii else "%"
         debts = await db.execute_fetchall(
             """SELECT customer_name, customer_phone,
                 COUNT(*) as order_count,
@@ -447,10 +449,10 @@ async def debt_summary(q: str = Query("", alias="q")):
                 COALESCE(SUM(remaining),0) as tr
             FROM orders
             WHERE customer_name != '' AND remaining > 0
-                AND (customer_name LIKE ? OR customer_phone LIKE ?)
+                AND (customer_name LIKE ? OR customer_phone LIKE ? OR customer_name_ascii LIKE ?)
             GROUP BY customer_phone
             ORDER BY tr DESC LIMIT 50""",
-            (like, like)
+            (like, like, like_ascii)
         )
 
         rows = ""

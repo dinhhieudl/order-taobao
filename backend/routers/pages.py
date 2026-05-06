@@ -227,7 +227,9 @@ async def create_order_page(request: Request):
 async def debt_page(request: Request, q: str = Query("", alias="q")):
     db = await get_db()
     try:
+        q_ascii = unidecode(q).strip().lower() if q else ""
         like = f"%{q}%" if q else "%"
+        like_ascii = f"% {q_ascii} %" if q_ascii else "%"
         debts = await db.execute_fetchall(
             """SELECT customer_name, customer_phone,
                 COUNT(*) as order_count,
@@ -236,10 +238,10 @@ async def debt_page(request: Request, q: str = Query("", alias="q")):
                 COALESCE(SUM(remaining),0) as total_remaining
             FROM orders
             WHERE customer_name != '' AND remaining > 0
-                AND (customer_name LIKE ? OR customer_phone LIKE ?)
+                AND (customer_name LIKE ? OR customer_phone LIKE ? OR customer_name_ascii LIKE ?)
             GROUP BY customer_phone
             ORDER BY total_remaining DESC""",
-            (like, like)
+            (like, like, like_ascii)
         )
 
         totals = await db.execute_fetchall(
