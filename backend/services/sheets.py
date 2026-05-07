@@ -146,7 +146,13 @@ def parse_don2_sheet(rows: list) -> list:
     return orders
 
 def _build_order_don(group: list, sheet_type: str, row_start: int) -> dict:
-    """Build order dict from group of rows. Never crashes on bad data."""
+    """Build order dict from group of rows. Never crashes on bad data.
+
+    Multi-product logic:
+    - Main row (group[0]) always has customer info + optionally a product.
+    - Sub-rows (group[1:]) have products but no customer info.
+    - ALL products are collected: main row's product (if any) + all sub-rows' products.
+    """
     main = group[0]
     items = []
 
@@ -168,9 +174,10 @@ def _build_order_don(group: list, sheet_type: str, row_start: int) -> dict:
         except (IndexError, AttributeError, ValueError):
             return 0.0
 
-    # If main row has product, it's a single order (or header+product on same row)
+    # Always add main row's product if it exists
     product = safe_str(main, 6)
     if product:
+        is_single = len(group) == 1
         items.append({
             "row_index": row_start,
             "product_name": product,
@@ -178,14 +185,16 @@ def _build_order_don(group: list, sheet_type: str, row_start: int) -> dict:
             "volume": safe_float(main, 8),
             "tracking_cn": safe_str(main, 9),
             "tracking_cn_2": "",
-            "item_price": safe_money(main, 14) if len(group) == 1 else 0,
+            "item_price": safe_money(main, 14) if is_single else 0,
         })
-    else:
-        # Multi-product: items from sub-rows
-        for idx, sub in enumerate(group[1:]):
+
+    # Always process sub-rows as additional items
+    for idx, sub in enumerate(group[1:]):
+        sub_product = safe_str(sub, 6)
+        if sub_product:
             items.append({
                 "row_index": row_start + idx + 1,
-                "product_name": safe_str(sub, 6),
+                "product_name": sub_product,
                 "weight": safe_float(sub, 7),
                 "volume": safe_float(sub, 8),
                 "tracking_cn": safe_str(sub, 9),
@@ -222,7 +231,13 @@ def _build_order_don(group: list, sheet_type: str, row_start: int) -> dict:
     }
 
 def _build_order_don2(group: list, row_start: int) -> dict:
-    """Build order dict from Don2 group of rows. Never crashes on bad data."""
+    """Build order dict from Don2 group of rows. Never crashes on bad data.
+
+    Multi-product logic:
+    - Main row (group[0]) always has customer info + optionally a product.
+    - Sub-rows (group[1:]) have products but no customer info.
+    - ALL products are collected: main row's product (if any) + all sub-rows' products.
+    """
     main = group[0]
     items = []
 
@@ -244,8 +259,10 @@ def _build_order_don2(group: list, row_start: int) -> dict:
         except (IndexError, AttributeError, ValueError):
             return 0.0
 
+    # Always add main row's product if it exists
     product = safe_str(main, 5)
     if product:
+        is_single = len(group) == 1
         items.append({
             "row_index": row_start,
             "product_name": product,
@@ -253,13 +270,16 @@ def _build_order_don2(group: list, row_start: int) -> dict:
             "volume": safe_float(main, 7),
             "tracking_cn": safe_str(main, 8),
             "tracking_cn_2": safe_str(main, 9),
-            "item_price": safe_money(main, 14) if len(group) == 1 else 0,
+            "item_price": safe_money(main, 14) if is_single else 0,
         })
-    else:
-        for idx, sub in enumerate(group[1:]):
+
+    # Always process sub-rows as additional items
+    for idx, sub in enumerate(group[1:]):
+        sub_product = safe_str(sub, 5)
+        if sub_product:
             items.append({
                 "row_index": row_start + idx + 1,
-                "product_name": safe_str(sub, 5),
+                "product_name": sub_product,
                 "weight": safe_float(sub, 6),
                 "volume": safe_float(sub, 7),
                 "tracking_cn": safe_str(sub, 8),
