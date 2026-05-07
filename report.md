@@ -1,18 +1,18 @@
 # 📦 Báo cáo Dự án — Quản lý Vận đơn Taobao
 
 > **Ngày:** 2026-05-07  
-> **Giai đoạn:** Phase 6 — Multi-Product Parsing Fix  
+> **Giai đoạn:** Phase 6 — Multi-Product Display & Parsing Fix  
 > **Trạng thái:** ✅ Đã fix & test kĩ
 
 ---
 
 ## 1. Tổng quan thay đổi Phase 6
 
+### 1.1 Fix Bug Parsing (Critical)
+
 Fix bug **nghiêm trọng** trong logic parse đơn hàng nhiều sản phẩm: khi dòng đầu tiên (header) có cả tên khách hàng VÀ sản phẩm, hệ thống chỉ lấy sản phẩm của dòng header, **bỏ qua toàn bộ các dòng sản phẩm phía sau**.
 
-### Bug gốc (Root Cause)
-
-Trong `_build_order_don()` và `_build_order_don2()`:
+**Bug gốc (Root Cause):**
 
 ```python
 # BUG: if/else — chỉ chạy 1 nhánh
@@ -26,26 +26,29 @@ else:
 
 **Hậu quả:** Đơn hàng 17 sản phẩm (như Don2 rows 280-296) chỉ hiển thị 1 sản phẩm "LÔ HÀNG", mất 16 sản phẩm còn lại.
 
-### Ví dụ thực tế bị ảnh hưởng (Don2 rows 280-296)
+**Fix:** Bỏ `if/else`, thay bằng 2 bước độc lập — LUÔN thêm header product + LUÔN xử lý sub-rows.
 
-```
-Row 280: [name=Nguyễn Long] [product=LÔ HÀNG] [price=10.045.000đ] ← Header + product
-Row 281: [product=Kệ gỗ] [weight=0.68] [tracking=78997384622117]   ← BỊ MẤT
-Row 282: [product=Phụ kiện chụp ảnh] [tracking=773416865482946]     ← BỊ MẤT
-Row 283: [product=Kính] [tracking=435137777095133]                   ← BỊ MẤT
-... (13 sản phẩm nữa) ← TẤT CẢ BỊ MẤT
-```
+### 1.2 Cải thiện hiển thị đơn hàng nhiều sản phẩm
 
-**Trước fix:** Hiển thị 1 sản phẩm ("LÔ HÀNG")  
-**Sau fix:** Hiển thị đúng 17 sản phẩm
+Đơn hàng nhiều sản phẩm giờ hiển thị như **1 đơn hàng duy nhất** trong danh sách, với badge `📦 N SP` để nhận biết. Chi tiết đầy đủ chỉ hiện khi nhấn vào xem chi tiết.
+
+**Trước:** Danh sách hiện raw `GROUP_CONCAT` → "LÔ HÀNG | Kệ gỗ | Phụ kiện chụp ảnh | Kính | ..." (quá dài)  
+**Sau:** `📦 17 SP LÔ HÀNG` (gọn, rõ ràng)
+
+**Áp dụng cho:**
+- `/don-hang` — Danh sách đơn hàng
+- `/tim-kiem` — Kết quả tìm kiếm
+- `/` — Dashboard (đơn gần đây)
+
+**Trang chi tiết** (`/don-hang/xxxx`) giữ nguyên — hiển thị bảng sản phẩm đầy đủ.
 
 ---
 
-## 2. Chi tiết Fix
+## 2. Chi tiết kỹ thuật
 
-### 2.1 `_build_order_don()` — `sheets.py`
+### 2.1 Parsing Fix — `sheets.py`
 
-**Thay đổi:** Bỏ cấu trúc `if/else`, thay bằng 2 bước độc lập:
+**`_build_order_don()` và `_build_order_don2()`:**
 
 ```python
 # Bước 1: LUÔN thêm sản phẩm của header row (nếu có)
@@ -60,18 +63,27 @@ for sub in group[1:]:
         items.append({...})
 ```
 
-### 2.2 `_build_order_don2()` — `sheets.py`
-
-Fix tương tự cho Don2 sheet (product ở cột F thay vì G).
-
-### 2.3 Logic mới
-
 | Scenario | Trước fix | Sau fix |
 |---|---|---|
-| Header có name + product, 0 sub-row | ✅ 1 item | ✅ 1 item (không đổi) |
-| Header có name + product, N sub-rows | ❌ 1 item (mất N items) | ✅ N+1 items |
-| Header có name, không product, N sub-rows | ✅ N items | ✅ N items (không đổi) |
-| Sub-row mồ côi (không header) | ✅ 1 item standalone | ✅ 1 item standalone (không đổi) |
+| Header có name + product, 0 sub-row | ✅ 1 item | ✅ 1 item |
+| Header có name + product, N sub-rows | ❌ 1 item (mất N) | ✅ N+1 items |
+| Header có name, không product, N sub-rows | ✅ N items | ✅ N items |
+| Sub-row mồ côi (không header) | ✅ 1 item | ✅ 1 item |
+
+### 2.2 Display Enhancement — Templates
+
+**Badge logic (Jinja2):**
+```jinja2
+{% set products = (o[24] or '').split(' | ') %}
+{% set product_count = products|length %}
+{% if product_count > 1 %}
+📦 {{ product_count }} SP  {{ products[0] }}
+{% else %}
+{{ products_str }}
+{% endif %}
+```
+
+**Dashboard fix:** Recent orders query đổi từ `SELECT *` sang `SELECT o.*, GROUP_CONCAT(...)` để có dữ liệu sản phẩm.
 
 ---
 
@@ -104,21 +116,31 @@ Fix tương tự cho Don2 sheet (product ở cột F thay vì G).
 | # | Test case | Kết quả |
 |---|---|---|
 | 1 | Single product backward compatible → 1 row | ✅ |
-| 2 | Multi-product DON → 4 rows (1 header + 3 items) | ✅ |
-| 3 | Multi-product Don2 → 3 rows (1 header + 2 items) | ✅ |
-| 4 | Empty product list → 1 row with empty product | ✅ |
-| 5 | Empty product names filtered correctly | ✅ |
+| 2 | Multi-product DON → 4 rows | ✅ |
+| 3 | Multi-product Don2 → 3 rows | ✅ |
+| 4 | Empty product list → 1 row | ✅ |
+| 5 | Empty product names filtered | ✅ |
 | 6 | Insert position calculated correctly | ✅ |
 | 7 | Buffer round-trip preserves product_names | ✅ |
 | 8 | Range spans all rows correctly | ✅ |
 
-### 3.3 Tổng kết
+### 3.3 Template Rendering Tests (4/4 PASS)
+
+| # | Test case | Kết quả |
+|---|---|---|
+| 1 | Single product → normal display | ✅ |
+| 2 | Multi product → badge with count + first product | ✅ |
+| 3 | 17 products → badge shows 17 SP | ✅ |
+| 4 | Empty product → normal display | ✅ |
+
+### 3.4 Tổng kết
 
 | Category | Tests | Pass | Fail |
 |---|---|---|---|
-| Parsing logic (Phase 6 mới) | 17 | 17 | 0 |
-| Write logic (Phase 5) | 8 | 8 | 0 |
-| **Tổng** | **25** | **25** | **0** |
+| Parsing logic | 17 | 17 | 0 |
+| Write logic | 8 | 8 | 0 |
+| Template rendering | 4 | 4 | 0 |
+| **Tổng** | **29** | **29** | **0** |
 
 ---
 
@@ -126,45 +148,32 @@ Fix tương tự cho Don2 sheet (product ở cột F thay vì G).
 
 | File | Thay đổi |
 |---|---|
-| `backend/services/sheets.py` | Fix `_build_order_don()` và `_build_order_don2()` — always collect all products |
-| `test_parse_multi_product.py` | **Mới** — 17 unit tests cho parsing logic |
+| `backend/services/sheets.py` | Fix `_build_order_don()` + `_build_order_don2()` — always collect all products |
+| `backend/routers/pages.py` | Dashboard recent orders: add GROUP_CONCAT for products |
+| `backend/templates/pages/orders.html` | Product column: badge `📦 N SP` + first product |
+| `backend/templates/pages/search.html` | Same badge treatment |
+| `backend/templates/pages/dashboard.html` | Same badge treatment for recent orders |
+| `test_parse_multi_product.py` | 17 unit tests cho parsing logic |
 | `report.md` | Cập nhật báo cáo Phase 6 |
 
 ---
 
 ## 5. Backward Compatibility
 
-- ✅ **Single-product orders:** Không thay đổi (1 item như cũ)
-- ✅ **Header without product + sub-rows:** Không thay đổi (N items như cũ)
-- ✅ **Orphan sub-rows:** Không thay đổi (standalone như cũ)
-- ✅ **Write logic:** Không thay đổi (Phase 5 vẫn hoạt động đúng)
-- ✅ **Existing tests:** 8/8 vẫn pass
+- ✅ Single-product orders: hiển thị như cũ
+- ✅ Multi-product orders: badge gọn gàng thay vì chuỗi dài
+- ✅ Detail page (`/don-hang/xxxx`): bảng sản phẩm đầy đủ, không đổi
+- ✅ Write logic: không thay đổi
+- ✅ Existing tests: 8/8 vẫn pass
 
 ---
 
-## 6. Tech Stack (không đổi)
+## 6. Metrics
 
-| Layer | Công nghệ |
-|---|---|
-| Backend | Python 3.11 + FastAPI |
-| Template | Jinja2 + HTMX |
-| CSS | Tailwind CSS (CDN) |
-| Charts | Chart.js 4.x |
-| Cache | SQLite (aiosqlite) |
-| Database | Google Sheets API (source of truth) |
-| Export | openpyxl |
-| Search | + unidecode (diacritics-free) |
-
----
-
-## 7. Metrics
-
-- **Bug severity:** 🔴 Critical (mất dữ liệu sản phẩm khi hiển thị)
-- **Code changes:** 1 file modified (`sheets.py`), 1 new test file
-- **Lines changed:** ~40 lines (logic refactor)
-- **Test coverage:** 25/25 pass (17 new + 8 existing)
+- **Bug severity:** 🔴 Critical (mất dữ liệu sản phẩm)
+- **Code changes:** 6 files modified, 1 new test file
+- **Test coverage:** 29/29 pass
 - **Backward compatible:** ✅ 100%
-- **Risk:** Low (pure parsing logic, no DB/schema changes)
 
 ---
 

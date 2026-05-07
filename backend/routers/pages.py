@@ -35,9 +35,13 @@ async def dashboard(request: Request):
             "SELECT COUNT(*) FROM orders WHERE tracking_cn != '' AND (tracking_vn IS NULL OR tracking_vn = '')"
         )
 
-        # Recent orders
+        # Recent orders (with product info)
         recent = await db.execute_fetchall(
-            "SELECT * FROM orders ORDER BY row_start DESC LIMIT 10"
+            """SELECT o.*, GROUP_CONCAT(oi.product_name, ' | ') as products
+            FROM orders o
+            LEFT JOIN order_items oi ON oi.order_id = o.id
+            GROUP BY o.id
+            ORDER BY o.row_start DESC LIMIT 10"""
         )
 
         # Top customers by debt (remaining > 0)

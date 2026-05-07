@@ -41,6 +41,8 @@
                 {% set total = int(o[13] or 0) %}
                 {% set deposit = int(o[14] or 0) %}
                 {% set remaining = int(o[15] or 0) %}
+                {% set products = (o[24] or '').split(' | ') %}
+                {% set product_count = products|length %}
                 <tr class="hover:bg-blue-50 cursor-pointer transition-colors {% if remaining > 0 %}border-l-4 {% if deposit == 0 %}border-l-red-500 bg-red-50/30{% elif remaining > total * 0.5 %}border-l-amber-500 bg-amber-50/30{% else %}border-l-yellow-400 bg-yellow-50/30{% endif %}{% else %}border-l-4 border-l-green-500{% endif %}"
                     onclick="window.location='/don-hang/{{ o[0] }}'">
                     <td class="px-3 py-2.5 text-gray-500 whitespace-nowrap">{{ o[20] or '' }}</td>
@@ -48,7 +50,18 @@
                         <div class="font-medium text-gray-900">{{ o[4] or 'N/A' }}</div>
                         <div class="text-xs text-gray-400">{{ o[6] or '' }}</div>
                     </td>
-                    <td class="px-3 py-2.5 text-gray-600 max-w-xs truncate">{{ o[24] or '' }}</td>
+                    <td class="px-3 py-2.5">
+                        {% if product_count > 1 %}
+                        <div class="flex items-center gap-1.5">
+                            <span class="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded-md text-[11px] font-medium bg-amber-100 text-amber-700 whitespace-nowrap">
+                                📦 {{ product_count }} SP
+                            </span>
+                            <span class="text-gray-500 text-xs truncate">{{ products[0] }}</span>
+                        </div>
+                        {% else %}
+                        <span class="text-gray-600 text-xs truncate">{{ o[24] or '' }}</span>
+                        {% endif %}
+                    </td>
                     <td class="px-3 py-2.5 text-right font-semibold">{{ "{:,.0f}".format(total) }} đ</td>
                     <td class="px-3 py-2.5 text-right text-green-600">{{ "{:,.0f}".format(deposit) }} đ</td>
                     <td class="px-3 py-2.5 text-right font-semibold {% if remaining > 0 %}text-red-600{% else %}text-green-600{% endif %}">
