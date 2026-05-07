@@ -264,6 +264,47 @@ async def customer_debt_orders(phone: str = Query("", alias="phone")):
         await db.close()
 
 
+@router.get("/customer-info-exact")
+async def customer_info_exact(phone: str = Query("", alias="phone")):
+    """Get exact customer info (name, latest address) for auto-fill."""
+    if not phone or len(phone) < 3:
+        return JSONResponse({"name": "", "address": ""})
+
+    db = await get_db()
+    try:
+        q_clean = phone.replace(" ", "")
+        
+        # We need exact match: customer_phone = ?
+        # But we also might want to tolerate spaces in DB, so we remove spaces in comparison
+        orders = await db.execute_fetchall(
+            """SELECT customer_name, customer_address
+            FROM orders
+            WHERE REPLACE(customer_phone, ' ', '') = ?
+            ORDER BY row_start DESC""",
+            (q_clean,)
+        )
+
+        if not orders:
+            return JSONResponse({"name": "", "address": ""})
+
+        # Name from the most recent order
+        name = orders[0][0] or ""
+        
+        # Find the first non-empty address
+        address = ""
+        for o in orders:
+            if o[1] and str(o[1]).strip():
+                address = str(o[1]).strip()
+                break
+                
+        return JSONResponse({
+            "name": name,
+            "address": address
+        })
+    finally:
+        await db.close()
+
+
 @router.get("/search-tracking")
 async def search_tracking(q: str = Query("", alias="q")):
     """Search by tracking number."""
@@ -354,8 +395,8 @@ async def create_order(
     customer_address: str = Form(""),
     product_name: list[str] = Form([]),
     note: str = Form(""),
-    total_price: int = Form(0),
-    deposit: int = Form(0),
+    total_price: str = Form("0"),
+    deposit: str = Form("0"),
 ):
     """Create new order and write to Google Sheets."""
 
@@ -375,8 +416,8 @@ async def create_order(
         "tracking_vn": "",
         "account": "",
         "note": note,
-        "total_price": total_price,
-        "deposit": deposit,
+        "total_price": parse_money(total_price),
+        "deposit": parse_money(deposit),
         "remaining": 0,
         "status": "",
     }
@@ -392,7 +433,7 @@ async def create_order(
                 Tạo đơn thành công!
             </div>
             <div class="text-sm text-green-600 mt-1">
-                Đã ghi vào sheet {sheet_type} • {customer_name} • {total_price:,.0f} đ
+                Đã ghi vào sheet {sheet_type} • {customer_name} • {order_data['total_price']:,.0f} đ
             </div>
         </div>
         """)

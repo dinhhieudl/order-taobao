@@ -354,7 +354,7 @@ def append_order_to_sheet(sheet_type: str, order_data: dict):
             "",  # A - stt (leave empty)
             order_data.get("order_date", ""),
             order_data.get("customer_name", ""),
-            order_data.get("customer_phone", ""),
+            f"'{order_data.get('customer_phone')}" if order_data.get("customer_phone") else "",
             order_data.get("customer_address", ""),
             order_data.get("source", ""),
             order_data.get("product_name", ""),
@@ -365,17 +365,15 @@ def append_order_to_sheet(sheet_type: str, order_data: dict):
             order_data.get("account", ""),
             "",  # M - empty col
             order_data.get("note", ""),
-            f"{order_data.get('total_price', 0):,.0f} đ" if order_data.get("total_price") else "",
-            f"{order_data.get('deposit', 0):,.0f} đ" if order_data.get("deposit") else "",
-            "",  # Q - hàng về tt - LEAVE EMPTY to preserve sheet formula
-            "",  # R - extra fee
-            order_data.get("status", ""),
-            "",  # T - mã bốc
-            "",  # U - mã vận đơn
-            "",  # V - cân nặng
-            "",  # W - thể tích
+            order_data.get("total_price") or "",
+            order_data.get("deposit") or "",
         ]
-        ws.insert_rows([row], row=insert_at, value_input_option="USER_ENTERED")
+        
+        try:
+            ws.update(values=[row], range_name=f"A{insert_at}:P{insert_at}", value_input_option="USER_ENTERED")
+        except Exception:
+            ws.add_rows(1)
+            ws.update(values=[row], range_name=f"A{insert_at}:P{insert_at}", value_input_option="USER_ENTERED")
     else:
         ws = sh.worksheet(SHEET_DON2)
         # Don2: SẢN PHẨM = column F = col index 6 (1-based)
@@ -386,7 +384,7 @@ def append_order_to_sheet(sheet_type: str, order_data: dict):
         row = [
             order_data.get("order_date", ""),
             order_data.get("customer_name", ""),
-            order_data.get("customer_phone", ""),
+            f"'{order_data.get('customer_phone')}" if order_data.get("customer_phone") else "",
             order_data.get("customer_address", ""),
             order_data.get("source", ""),
             order_data.get("product_name", ""),
@@ -398,14 +396,14 @@ def append_order_to_sheet(sheet_type: str, order_data: dict):
             order_data.get("account", ""),
             "",  # empty col
             order_data.get("note", ""),
-            f"{order_data.get('total_price', 0):,.0f} đ" if order_data.get("total_price") else "",
-            f"{order_data.get('deposit', 0):,.0f} đ" if order_data.get("deposit") else "",
-            "",  # remaining - LEAVE EMPTY to preserve sheet formula
-            "",  # extra
-            order_data.get("status", ""),
-            "",  # shipping fee manual
-            "",  # revenue
+            order_data.get("total_price") or "",
+            order_data.get("deposit") or "",
         ]
-        ws.insert_rows([row], row=insert_at, value_input_option="USER_ENTERED")
+        
+        try:
+            ws.update(values=[row], range_name=f"A{insert_at}:P{insert_at}", value_input_option="USER_ENTERED")
+        except Exception:
+            ws.add_rows(1)
+            ws.update(values=[row], range_name=f"A{insert_at}:P{insert_at}", value_input_option="USER_ENTERED")
 
     return True
