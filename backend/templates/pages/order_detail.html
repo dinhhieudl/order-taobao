@@ -147,12 +147,22 @@
         <h3 class="font-semibold text-gray-800 mb-3">📜 Lịch sử đơn hàng cùng khách</h3>
         <div class="space-y-2">
             {% for h in history %}
+            {% set h_products = (h[24] or '').split(' | ') %}
+            {% set h_product_count = h_products|length %}
             <a href="/don-hang/{{ h[0] }}" class="flex items-center justify-between py-2 px-3 rounded-lg hover:bg-gray-50 border-b border-gray-50">
-                <div>
-                    <span class="text-sm font-medium">{{ h[20] or '' }}</span>
-                    <span class="text-sm text-gray-500 ml-2">{{ h[1] }}</span>
+                <div class="flex items-center gap-2 min-w-0">
+                    <span class="text-sm font-medium whitespace-nowrap">{{ h[20] or '' }}</span>
+                    <span class="text-xs px-1.5 py-0.5 rounded whitespace-nowrap {% if h[1] == 'DON' %}bg-blue-100 text-blue-700{% else %}bg-purple-100 text-purple-700{% endif %}">{{ h[1] }}</span>
+                    {% if h_product_count > 1 %}
+                    <span class="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded-md text-[11px] font-medium bg-amber-100 text-amber-700 whitespace-nowrap">
+                        📦 {{ h_product_count }} SP
+                    </span>
+                    <span class="text-xs text-gray-400 truncate">{{ h_products[0] }}</span>
+                    {% else %}
+                    <span class="text-xs text-gray-400 truncate">{{ h[24] or '' }}</span>
+                    {% endif %}
                 </div>
-                <div class="text-right">
+                <div class="text-right whitespace-nowrap ml-3">
                     <span class="text-sm font-medium">{{ "{:,.0f}".format(int(h[13] or 0)) }} đ</span>
                     {% if h[15] %}
                     <span class="ml-2 text-xs text-green-600">{{ "{:,.0f}".format(int(h[15] or 0)) }}</span>

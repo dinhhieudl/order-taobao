@@ -186,10 +186,15 @@ async def order_detail(request: Request, order_id: int):
                 "SELECT * FROM order_items WHERE order_id = ?", (order_id,)
             )
 
-            # Customer history
-            phone = order[0][5]  # customer_phone
+            # Customer history (with product info for multi-product badge)
+            phone = order[0][6]  # customer_phone
             history = await db.execute_fetchall(
-                "SELECT * FROM orders WHERE customer_phone = ? AND id != ? ORDER BY row_start DESC LIMIT 20",
+                """SELECT o.*, GROUP_CONCAT(oi.product_name, ' | ') as products
+                FROM orders o
+                LEFT JOIN order_items oi ON oi.order_id = o.id
+                WHERE o.customer_phone = ? AND o.id != ?
+                GROUP BY o.id
+                ORDER BY o.row_start DESC LIMIT 20""",
                 (phone, order_id)
             )
 

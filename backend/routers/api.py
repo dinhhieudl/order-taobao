@@ -154,13 +154,23 @@ async def customer_history(phone: str = Query("", alias="phone")):
                 color = "green" if "hoàn" in (o[7] or "").lower() or "xong" in (o[7] or "").lower() else "blue"
                 status_badge = f'<span class="px-1.5 py-0.5 rounded text-[10px] bg-{color}-100 text-{color}-700">{o[7]}</span>'
 
+            products_str = o[10] or ''
+            product_names = [p.strip() for p in products_str.split(' | ') if p.strip()]
+            product_count = len(product_names)
+
+            if product_count > 1:
+                product_cell = f'''<span class="inline-flex items-center gap-0.5 px-1 py-0.5 rounded text-[10px] font-medium bg-amber-100 text-amber-700">📦 {product_count} SP</span>
+                    <span class="text-[10px] text-gray-400 truncate">{product_names[0]}</span>'''
+            else:
+                product_cell = f'<span class="text-[10px] text-gray-400 truncate">{products_str}</span>'
+
             rows += f"""
             <tr class="border-b border-gray-100 last:border-0">
                 <td class="px-2 py-1.5 text-xs text-gray-500">{o[1] or ''}</td>
                 <td class="px-2 py-1.5">
                     <a href="/don-hang/{o[0]}" class="text-xs text-primary-600 hover:underline">{o[10][:20] if o[10] else o[8][:15] if o[8] else '-'}</a>
                 </td>
-                <td class="px-2 py-1.5 text-xs max-w-[120px] truncate">{o[10] or ''}</td>
+                <td class="px-2 py-1.5">{product_cell}</td>
                 <td class="px-2 py-1.5 text-xs text-right font-medium">{o[4]:,.0f} đ</td>
                 <td class="px-2 py-1.5">{status_badge}</td>
             </tr>"""
@@ -217,10 +227,20 @@ async def customer_debt_orders(phone: str = Query("", alias="phone")):
         rows = ""
         for o in orders:
             status_color = "green" if o[7] and ("hoàn" in o[7].lower() or "xong" in o[7].lower()) else "blue" if o[7] else "gray"
+            products_str = o[11] or ''
+            product_names = [p.strip() for p in products_str.split(' | ') if p.strip()]
+            product_count = len(product_names)
+
+            if product_count > 1:
+                product_cell = f'''<span class="inline-flex items-center gap-0.5 px-1 py-0.5 rounded text-[10px] font-medium bg-amber-100 text-amber-700">📦 {product_count} SP</span>
+                    <span class="text-[10px] text-gray-400 truncate ml-1">{product_names[0]}</span>'''
+            else:
+                product_cell = f'<span class="text-xs max-w-[150px] truncate" title="{products_str}">{products_str or "-"}</span>'
+
             rows += f"""
             <tr class="border-b border-gray-100 hover:bg-gray-50">
                 <td class="px-3 py-2 text-xs text-gray-500">{o[1] or ''}</td>
-                <td class="px-3 py-2 text-xs max-w-[150px] truncate" title="{o[11] or ''}">{o[11] or '-'}</td>
+                <td class="px-3 py-2">{product_cell}</td>
                 <td class="px-3 py-2 font-mono text-xs">{o[8] or '-'}</td>
                 <td class="px-3 py-2 font-mono text-xs">{o[10] or '-'}</td>
                 <td class="px-3 py-2">

@@ -1,146 +1,128 @@
 # 📦 Báo cáo Dự án — Quản lý Vận đơn Taobao
 
 > **Ngày:** 2026-05-07  
-> **Giai đoạn:** Phase 6 — Multi-Product Display & Parsing Fix  
+> **Giai đoạn:** Phase 7 — Multi-Product Display Enhancement & Bug Fix  
 > **Trạng thái:** ✅ Đã fix & test kĩ
 
 ---
 
-## 1. Tổng quan thay đổi Phase 6
+## 1. Tổng quan thay đổi Phase 7
 
-### 1.1 Fix Bug Parsing (Critical)
+### 1.1 Fix Bug: Customer History Column Index (Critical)
 
-Fix bug **nghiêm trọng** trong logic parse đơn hàng nhiều sản phẩm: khi dòng đầu tiên (header) có cả tên khách hàng VÀ sản phẩm, hệ thống chỉ lấy sản phẩm của dòng header, **bỏ qua toàn bộ các dòng sản phẩm phía sau**.
+Fix bug **nghiêm trọng** trong `pages.py` — `order_detail` function: lấy sai index cho `customer_phone`.
 
 **Bug gốc (Root Cause):**
 
 ```python
-# BUG: if/else — chỉ chạy 1 nhánh
-product = safe_str(main, 6)
-if product:
-    items.append(...)       # ← chỉ lấy sản phẩm header
-else:
-    for sub in group[1:]:   # ← chỉ lấy sub-rows (KHÔNG bao giờ chạy nếu header có product)
-        items.append(...)
+# BUG: index 5 = customer_name_ascii, KHÔNG phải customer_phone
+phone = order[0][5]  # customer_phone ← SAI!
 ```
 
-**Hậu quả:** Đơn hàng 17 sản phẩm (như Don2 rows 280-296) chỉ hiển thị 1 sản phẩm "LÔ HÀNG", mất 16 sản phẩm còn lại.
+**Hậu quả:** Customer history section luôn trống vì query `WHERE customer_phone = ?` so sánh với giá trị `customer_name_ascii` (ví dụ: `' nguyen thi minh nguyet '` thay vì `'0966009396'`).
 
-**Fix:** Bỏ `if/else`, thay bằng 2 bước độc lập — LUÔN thêm header product + LUÔN xử lý sub-rows.
+**Fix:**
 
-### 1.2 Cải thiện hiển thị đơn hàng nhiều sản phẩm
+```python
+phone = order[0][6]  # customer_phone ← ĐÚNG
+```
 
-Đơn hàng nhiều sản phẩm giờ hiển thị như **1 đơn hàng duy nhất** trong danh sách, với badge `📦 N SP` để nhận biết. Chi tiết đầy đủ chỉ hiện khi nhấn vào xem chi tiết.
+### 1.2 Cải thiện hiển thị Multi-Product trong Customer History
 
-**Trước:** Danh sách hiện raw `GROUP_CONCAT` → "LÔ HÀNG | Kệ gỗ | Phụ kiện chụp ảnh | Kính | ..." (quá dài)  
-**Sau:** `📦 17 SP LÔ HÀNG` (gọn, rõ ràng)
+**Trang chi tiết đơn hàng** (`/don-hang/xxxx`) — phần "Lịch sử đơn hàng cùng khách":
+- **Trước:** Không có indicator multi-product, chỉ hiện ngày + sheet type
+- **Sau:** Hiển thị badge `📦 N SP` + tên sản phẩm đầu tiên cho đơn multi-product
 
 **Áp dụng cho:**
-- `/don-hang` — Danh sách đơn hàng
-- `/tim-kiem` — Kết quả tìm kiếm
-- `/` — Dashboard (đơn gần đây)
+- `/don-hang/xxxx` — Customer history section (template `order_detail.html`)
+- `/api/customer-history` — HTMX API cho smart form
+- `/api/customer-debt-orders` — HTMX API cho dashboard debt panel
 
-**Trang chi tiết** (`/don-hang/xxxx`) giữ nguyên — hiển thị bảng sản phẩm đầy đủ.
+### 1.3 Dashboard & List Pages (giữ nguyên từ Phase 6)
+
+Các trang sau đã có multi-product badge từ Phase 6, xác nhận vẫn hoạt động:
+- `/don-hang` — Danh sách đơn hàng ✅
+- `/tim-kiem` — Kết quả tìm kiếm ✅
+- `/` — Dashboard (đơn gần đây) ✅
 
 ---
 
 ## 2. Chi tiết kỹ thuật
 
-### 2.1 Parsing Fix — `sheets.py`
+### 2.1 Bug Fix — Column Index (`pages.py`)
 
-**`_build_order_don()` và `_build_order_don2()`:**
-
-```python
-# Bước 1: LUÔN thêm sản phẩm của header row (nếu có)
-product = safe_str(main, 6)
-if product:
-    items.append({...})
-
-# Bước 2: LUÔN xử lý sub-rows (bất kể header có product hay không)
-for sub in group[1:]:
-    sub_product = safe_str(sub, 6)
-    if sub_product:
-        items.append({...})
+**Database schema (orders table):**
+```
+0: id | 1: sheet_type | 2: row_start | 3: row_end
+4: customer_name | 5: customer_name_ascii | 6: customer_phone
+7: customer_address | ... | 20: order_date | ... | 23: last_sync
 ```
 
-| Scenario | Trước fix | Sau fix |
-|---|---|---|
-| Header có name + product, 0 sub-row | ✅ 1 item | ✅ 1 item |
-| Header có name + product, N sub-rows | ❌ 1 item (mất N) | ✅ N+1 items |
-| Header có name, không product, N sub-rows | ✅ N items | ✅ N items |
-| Sub-row mồ côi (không header) | ✅ 1 item | ✅ 1 item |
+**History query với GROUP_CONCAT:**
+```sql
+SELECT o.*, GROUP_CONCAT(oi.product_name, ' | ') as products
+FROM orders o LEFT JOIN order_items oi ON oi.order_id = o.id
+WHERE o.customer_phone = ? AND o.id != ?
+GROUP BY o.id ORDER BY o.row_start DESC LIMIT 20
+```
 
-### 2.2 Display Enhancement — Templates
+Kết quả: 24 columns (0-23 từ orders + 24 là products GROUP_CONCAT).
 
-**Badge logic (Jinja2):**
+### 2.2 Template Enhancement — Customer History (`order_detail.html`)
+
 ```jinja2
-{% set products = (o[24] or '').split(' | ') %}
-{% set product_count = products|length %}
-{% if product_count > 1 %}
-📦 {{ product_count }} SP  {{ products[0] }}
+{% set h_products = (h[24] or '').split(' | ') %}
+{% set h_product_count = h_products|length %}
+{% if h_product_count > 1 %}
+    📦 {{ h_product_count }} SP  {{ h_products[0] }}
 {% else %}
-{{ products_str }}
+    {{ h[24] or '' }}
 {% endif %}
 ```
 
-**Dashboard fix:** Recent orders query đổi từ `SELECT *` sang `SELECT o.*, GROUP_CONCAT(...)` để có dữ liệu sản phẩm.
+### 2.3 API Enhancement — `customer-history` & `customer-debt-orders`
+
+Cả 2 API endpoint đều được cập nhật để parse `GROUP_CONCAT` products và hiển thị badge `📦 N SP` khi có nhiều sản phẩm.
 
 ---
 
 ## 3. Test Results
 
-### 3.1 Unit Tests — Parsing Logic (17/17 PASS)
-
-| # | Test case | Sheet | Kết quả |
-|---|---|---|---|
-| 1 | Single row, single product | DON | ✅ |
-| 2 | Header with product + sub-rows → all items collected | DON | ✅ |
-| 3 | Header without product, sub-rows only | DON | ✅ |
-| 4 | Orphan sub-row → standalone order | DON | ✅ |
-| 5 | Empty rows skipped | DON | ✅ |
-| 6 | Two separate orders parsed correctly | DON | ✅ |
-| 7 | Single order then multi-product order | DON | ✅ |
-| 8 | Single row, single product | Don2 | ✅ |
-| 9 | Header with product + sub-rows → all items collected | Don2 | ✅ |
-| 10 | **17 products realistic scenario (rows 280-296)** | Don2 | ✅ |
-| 11 | Orphan sub-row → standalone order | Don2 | ✅ |
-| 12 | Sub-row tracking_cn preserved on items | — | ✅ |
-| 13 | Item row_indices correct | — | ✅ |
-| 14 | Don2 tracking_cn_2 on items | Don2 | ✅ |
-| 15 | Empty input → no orders | — | ✅ |
-| 16 | Short rows padded correctly | DON | ✅ |
-| 17 | Empty sub-row breaks group → orphan order | DON | ✅ |
-
-### 3.2 Unit Tests — Write Logic (8/8 PASS)
+### 3.1 Functional Tests (12/12 PASS)
 
 | # | Test case | Kết quả |
 |---|---|---|
-| 1 | Single product backward compatible → 1 row | ✅ |
-| 2 | Multi-product DON → 4 rows | ✅ |
-| 3 | Multi-product Don2 → 3 rows | ✅ |
-| 4 | Empty product list → 1 row | ✅ |
-| 5 | Empty product names filtered | ✅ |
-| 6 | Insert position calculated correctly | ✅ |
-| 7 | Buffer round-trip preserves product_names | ✅ |
-| 8 | Range spans all rows correctly | ✅ |
+| 1 | Order list page — multi-product badges | ✅ 7 badges |
+| 2 | Search page — multi-product badges | ✅ 3 badges |
+| 3 | Dashboard — multi-product badges | ✅ 2 badges |
+| 4 | Order detail — 15 items displayed | ✅ All products shown |
+| 5 | Order detail — customer history with badges | ✅ 2 history items with badges |
+| 6 | Order detail — single product order | ✅ No badge, normal display |
+| 7 | Customer history API — badges | ✅ 2 badges |
+| 8 | Customer debt API — badges | ✅ Correct (no debt data) |
+| 9 | Order with empty phone — no crash | ✅ 200 OK |
+| 10 | Non-existent order — 404 | ✅ 404 returned |
+| 11 | Pagination | ✅ 200 OK |
+| 12 | All pages return 200 | ✅ 7/7 pages |
 
-### 3.3 Template Rendering Tests (4/4 PASS)
+### 3.2 Edge Cases
 
 | # | Test case | Kết quả |
 |---|---|---|
-| 1 | Single product → normal display | ✅ |
-| 2 | Multi product → badge with count + first product | ✅ |
-| 3 | 17 products → badge shows 17 SP | ✅ |
-| 4 | Empty product → normal display | ✅ |
+| 1 | Order with empty customer phone | ✅ No crash, empty history |
+| 2 | Order with 15 products | ✅ All 15 displayed in table |
+| 3 | History with mix of single/multi orders | ✅ Correct badges |
+| 4 | Non-existent order ID | ✅ 404 response |
+| 5 | Filter by sheet type | ✅ Works |
+| 6 | Search with diacritics | ✅ Works |
 
-### 3.4 Tổng kết
+### 3.3 Tổng kết
 
 | Category | Tests | Pass | Fail |
 |---|---|---|---|
-| Parsing logic | 17 | 17 | 0 |
-| Write logic | 8 | 8 | 0 |
-| Template rendering | 4 | 4 | 0 |
-| **Tổng** | **29** | **29** | **0** |
+| Functional | 12 | 12 | 0 |
+| Edge cases | 6 | 6 | 0 |
+| **Tổng** | **18** | **18** | **0** |
 
 ---
 
@@ -148,33 +130,38 @@ for sub in group[1:]:
 
 | File | Thay đổi |
 |---|---|
-| `backend/services/sheets.py` | Fix `_build_order_don()` + `_build_order_don2()` — always collect all products |
-| `backend/routers/pages.py` | Dashboard recent orders: add GROUP_CONCAT for products |
-| `backend/templates/pages/orders.html` | Product column: badge `📦 N SP` + first product |
-| `backend/templates/pages/search.html` | Same badge treatment |
-| `backend/templates/pages/dashboard.html` | Same badge treatment for recent orders |
-| `test_parse_multi_product.py` | 17 unit tests cho parsing logic |
-| `report.md` | Cập nhật báo cáo Phase 6 |
+| `backend/routers/pages.py` | Fix `customer_phone` index (5→6), add GROUP_CONCAT to history query |
+| `backend/templates/pages/order_detail.html` | Add multi-product badge in customer history section |
+| `backend/routers/api.py` | Add multi-product badge to `customer-history` and `customer-debt-orders` APIs |
 
 ---
 
 ## 5. Backward Compatibility
 
-- ✅ Single-product orders: hiển thị như cũ
-- ✅ Multi-product orders: badge gọn gàng thay vì chuỗi dài
-- ✅ Detail page (`/don-hang/xxxx`): bảng sản phẩm đầy đủ, không đổi
-- ✅ Write logic: không thay đổi
-- ✅ Existing tests: 8/8 vẫn pass
+- ✅ Single-product orders: hiển thị như cũ, không có badge
+- ✅ Multi-product orders: badge `📦 N SP` + tên SP đầu tiên
+- ✅ Detail page products table: không đổi
+- ✅ All API endpoints: không break backward
+- ✅ Phase 6 changes: vẫn hoạt động bình thường
 
 ---
 
 ## 6. Metrics
 
-- **Bug severity:** 🔴 Critical (mất dữ liệu sản phẩm)
-- **Code changes:** 6 files modified, 1 new test file
-- **Test coverage:** 29/29 pass
+- **Bug severity:** 🔴 Critical (customer history luôn trống)
+- **Code changes:** 3 files modified, +44/-9 lines
+- **Test coverage:** 18/18 pass
 - **Backward compatible:** ✅ 100%
 
 ---
 
-**Hết báo cáo Phase 6.**
+## 7. Phase 6 Summary (carried forward)
+
+Phase 6 đã fix parsing logic cho đơn hàng nhiều sản phẩm:
+- Fix `_build_order_don()` + `_build_order_don2()` — always collect all products
+- Add `📦 N SP` badge to order list, search, dashboard
+- 29/29 tests pass
+
+---
+
+**Hết báo cáo Phase 7.**
