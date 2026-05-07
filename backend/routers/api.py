@@ -398,10 +398,13 @@ async def create_order(
     total_price: str = Form("0"),
     deposit: str = Form("0"),
 ):
-    """Create new order and write to Google Sheets."""
+    """Create new order and write to Google Sheets.
 
-    # Concatenate multiple product names with " | " separator
-    product_str = " | ".join(p.strip() for p in product_name if p.strip()) if product_name else ""
+    Multi-product support: each product_name becomes a separate row in the sheet.
+    First row has all customer/order info; subsequent rows only have product name.
+    """
+    # Build list of non-empty product names
+    product_list = [p.strip() for p in product_name if p.strip()] if product_name else []
 
     order_data = {
         "order_date": order_date or datetime.now().strftime("%d/%m"),
@@ -409,7 +412,7 @@ async def create_order(
         "customer_phone": customer_phone.replace(" ", ""),
         "customer_address": customer_address,
         "source": "",
-        "product_name": product_str,
+        "product_names": product_list,  # List for multi-row write
         "weight": 0,
         "volume": 0,
         "tracking_cn": "",
@@ -424,6 +427,8 @@ async def create_order(
 
     try:
         append_order_to_sheet(sheet_type, order_data)
+        num_products = len(product_list) if product_list else 1
+        product_info = f" • {num_products} sản phẩm" if num_products > 1 else ""
         return HTMLResponse(f"""
         <div class="bg-green-50 border border-green-200 rounded-lg p-4">
             <div class="flex items-center gap-2 text-green-700 font-medium">
@@ -433,7 +438,7 @@ async def create_order(
                 Tạo đơn thành công!
             </div>
             <div class="text-sm text-green-600 mt-1">
-                Đã ghi vào sheet {sheet_type} • {customer_name} • {order_data['total_price']:,.0f} đ
+                Đã ghi vào sheet {sheet_type} • {customer_name} • {order_data['total_price']:,.0f} đ{product_info}
             </div>
         </div>
         """)

@@ -323,16 +323,27 @@ def _find_last_data_row(ws, product_col: int) -> int:
 
 def append_order_to_sheet(sheet_type: str, order_data: dict):
     """Insert a new order after the last row with product data.
-    
+
+    Multi-product support: when order_data contains 'product_names' (list),
+    writes multiple rows:
+      - First row: all customer/order info + first product
+      - Subsequent rows: only product name (and weight/volume/tracking if provided)
+
     Uses insert_rows() instead of append_row() to place data right after
     the last row that has content in the product column. This preserves
     any formulas, formatting, or data in columns of rows below.
-    
+
     Note: 'remaining' (hàng về tt) is intentionally left empty to preserve
     the sheet's existing formula. The sheet calculates remaining automatically
     when payment is recorded in the payment column.
     """
     sh = get_spreadsheet()
+
+    # Determine product list: prefer 'product_names' (list), fallback to single 'product_name'
+    product_names = order_data.get("product_names", [])
+    if not product_names:
+        single = order_data.get("product_name", "")
+        product_names = [single] if single else [""]
 
     if sheet_type == "DON":
         ws = sh.worksheet(SHEET_DON)
@@ -345,35 +356,57 @@ def append_order_to_sheet(sheet_type: str, order_data: dict):
         last_data_row = _find_last_data_row(ws, product_col)
         insert_at = last_data_row + 1
 
-        # Note: col A = stt is auto/empty, row starts from col B
-        # DON columns: stt(A), stt/ngày(B), Tên(C), SDT(D), Địa chỉ(E), NGUỒN(F), SẢN PHẨM(G),
-        # KHỐI LƯỢNG(H), KÍCH THƯỚC(I), Vận đơn TQ(J), Vận đơn VN(K), ACC(L), (M), NOTE(N),
-        # GIÁ(O), CỌC(P), hàng về tt(Q), extra(R), Trạng Thái(S), Mã bốc(T), Mã vận đơn(U),
-        # Cân nặng(V), Thể tích(W)
-        row = [
-            "",  # A - stt (leave empty)
-            order_data.get("order_date", ""),
-            order_data.get("customer_name", ""),
-            f"'{order_data.get('customer_phone')}" if order_data.get("customer_phone") else "",
-            order_data.get("customer_address", ""),
-            order_data.get("source", ""),
-            order_data.get("product_name", ""),
-            str(order_data.get("weight", "")),
-            str(order_data.get("volume", "")),
-            order_data.get("tracking_cn", ""),
-            order_data.get("tracking_vn", ""),
-            order_data.get("account", ""),
-            "",  # M - empty col
-            order_data.get("note", ""),
-            order_data.get("total_price") or "",
-            order_data.get("deposit") or "",
-        ]
-        
+        rows_to_write = []
+        for idx, pname in enumerate(product_names):
+            if idx == 0:
+                # Header row: all customer/order info + first product
+                row = [
+                    "",  # A - stt (leave empty)
+                    order_data.get("order_date", ""),
+                    order_data.get("customer_name", ""),
+                    f"'{order_data.get('customer_phone')}" if order_data.get("customer_phone") else "",
+                    order_data.get("customer_address", ""),
+                    order_data.get("source", ""),
+                    pname,
+                    str(order_data.get("weight", "")),
+                    str(order_data.get("volume", "")),
+                    order_data.get("tracking_cn", ""),
+                    order_data.get("tracking_vn", ""),
+                    order_data.get("account", ""),
+                    "",  # M - empty col
+                    order_data.get("note", ""),
+                    order_data.get("total_price") or "",
+                    order_data.get("deposit") or "",
+                ]
+            else:
+                # Item row: only product name and product-specific fields
+                row = [
+                    "",  # A - stt
+                    "",  # B - date
+                    "",  # C - name
+                    "",  # D - phone
+                    "",  # E - address
+                    "",  # F - source
+                    pname,  # G - product name
+                    "",  # H - weight (can be extended later)
+                    "",  # I - volume
+                    "",  # J - tracking_cn
+                    "",  # K - tracking_vn
+                    "",  # L - account
+                    "",  # M - empty
+                    "",  # N - note
+                    "",  # O - price
+                    "",  # P - deposit
+                ]
+            rows_to_write.append(row)
+
+        end_row = insert_at + len(rows_to_write) - 1
+        range_str = f"A{insert_at}:P{end_row}"
         try:
-            ws.update(values=[row], range_name=f"A{insert_at}:P{insert_at}", value_input_option="USER_ENTERED")
+            ws.update(values=rows_to_write, range_name=range_str, value_input_option="USER_ENTERED")
         except Exception:
-            ws.add_rows(1)
-            ws.update(values=[row], range_name=f"A{insert_at}:P{insert_at}", value_input_option="USER_ENTERED")
+            ws.add_rows(len(rows_to_write))
+            ws.update(values=rows_to_write, range_name=range_str, value_input_option="USER_ENTERED")
     else:
         ws = sh.worksheet(SHEET_DON2)
         # Don2: SẢN PHẨM = column F = col index 6 (1-based)
@@ -381,29 +414,56 @@ def append_order_to_sheet(sheet_type: str, order_data: dict):
         last_data_row = _find_last_data_row(ws, product_col)
         insert_at = last_data_row + 1
 
-        row = [
-            order_data.get("order_date", ""),
-            order_data.get("customer_name", ""),
-            f"'{order_data.get('customer_phone')}" if order_data.get("customer_phone") else "",
-            order_data.get("customer_address", ""),
-            order_data.get("source", ""),
-            order_data.get("product_name", ""),
-            str(order_data.get("weight", "")),
-            str(order_data.get("volume", "")),
-            order_data.get("tracking_cn", ""),
-            "",  # tracking_cn_2
-            order_data.get("tracking_vn", ""),
-            order_data.get("account", ""),
-            "",  # empty col
-            order_data.get("note", ""),
-            order_data.get("total_price") or "",
-            order_data.get("deposit") or "",
-        ]
-        
+        rows_to_write = []
+        for idx, pname in enumerate(product_names):
+            if idx == 0:
+                # Header row: all customer/order info + first product
+                row = [
+                    order_data.get("order_date", ""),
+                    order_data.get("customer_name", ""),
+                    f"'{order_data.get('customer_phone')}" if order_data.get("customer_phone") else "",
+                    order_data.get("customer_address", ""),
+                    order_data.get("source", ""),
+                    pname,
+                    str(order_data.get("weight", "")),
+                    str(order_data.get("volume", "")),
+                    order_data.get("tracking_cn", ""),
+                    "",  # tracking_cn_2
+                    order_data.get("tracking_vn", ""),
+                    order_data.get("account", ""),
+                    "",  # empty col
+                    order_data.get("note", ""),
+                    order_data.get("total_price") or "",
+                    order_data.get("deposit") or "",
+                ]
+            else:
+                # Item row: only product name and product-specific fields
+                row = [
+                    "",  # A - date
+                    "",  # B - name
+                    "",  # C - phone
+                    "",  # D - address
+                    "",  # E - source
+                    pname,  # F - product name
+                    "",  # G - weight
+                    "",  # H - volume
+                    "",  # I - tracking_cn
+                    "",  # J - tracking_cn_2
+                    "",  # K - tracking_vn
+                    "",  # L - account
+                    "",  # M - empty
+                    "",  # N - note
+                    "",  # O - price
+                    "",  # P - deposit
+                ]
+            rows_to_write.append(row)
+
+        end_row = insert_at + len(rows_to_write) - 1
+        range_str = f"A{insert_at}:P{end_row}"
         try:
-            ws.update(values=[row], range_name=f"A{insert_at}:P{insert_at}", value_input_option="USER_ENTERED")
+            ws.update(values=rows_to_write, range_name=range_str, value_input_option="USER_ENTERED")
         except Exception:
-            ws.add_rows(1)
-            ws.update(values=[row], range_name=f"A{insert_at}:P{insert_at}", value_input_option="USER_ENTERED")
+            ws.add_rows(len(rows_to_write))
+            ws.update(values=rows_to_write, range_name=range_str, value_input_option="USER_ENTERED")
 
     return True
